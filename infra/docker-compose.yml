@@ -1,0 +1,48 @@
+services:
+  # ---------------------------------------------------------
+  # O Banco de Dados da Kawashi (Oracle Free Edition)
+  # Responsável pelo armazenamento persistente dos dados e auditoria.
+  # ---------------------------------------------------------
+  oracle:
+    image: gvenzl/oracle-free:latest # Imagem oficial e leve do Oracle para desenvolvimento.
+    container_name: kawashi-oracle   # Nome fixo para facilitar a referência por outros serviços.
+    ports:
+      - "1521:1521"                  # Porta padrão do Oracle (Local:Container).
+    environment:
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD}       # Senha do usuário SYS/SYSTEM (Admin Root do banco).
+      - APP_USER=${APP_USER}                     # Nome do usuário que o Spring Boot usará.
+      - APP_USER_PASSWORD=${APP_USER_PASSWORD}   # Senha inicial do usuário da aplicação.
+    volumes:
+      # Ponto de montagem para scripts de inicialização automática.
+      # Qualquer arquivo .sql em ./oracle-init será executado no primeiro boot.
+      - ./oracle-init:/container-entrypoint-initdb.d 
+    networks:
+      - kawashi-net # Conecta o banco à rede privada interna.
+
+  # ---------------------------------------------------------
+  # O Cofre da Kawashi (HashiCorp Vault)
+  # Responsável pelo Secret Management: centraliza e protege senhas e chaves.
+  # ---------------------------------------------------------
+  vault:
+    # ATENÇÃO: Fixado na 1.15.6 pois versões mais recentes (1.16+) utilizam
+    # CAP_SETFCAP no entrypoint, capability não suportada pelo Docker Desktop
+    # no Windows/WSL2, causando crash silencioso no boot do container.
+    # Atualizar somente após confirmação de compatibilidade com o ambiente local.
+    image: hashicorp/vault:1.15.6
+    container_name: kawashi-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
+    command: server -dev -dev-listen-address="0.0.0.0:8200"
+    restart: unless-stopped
+    networks:
+      - kawashi-net
+
+# ---------------------------------------------------------
+# Rede Privada (Bridge)
+# Garante que os serviços se enxerguem pelo nome do container (DNS interno).
+# ---------------------------------------------------------
+networks:
+  kawashi-net:
+    driver: bridge

@@ -1,0 +1,17 @@
+-- Garante que estamos mexendo no PDB (Pluggable Database) e não na raiz
+ALTER SESSION SET CONTAINER = FREEPDB1;
+
+-- 1. Criando o espaço seguro para os dados da aplicação
+CREATE TABLESPACE TS_KAWASHI_DATA 
+DATAFILE 'ts_kawashi_data.dbf' SIZE 50M AUTOEXTEND ON;
+
+-- 2. Criando o espaço isolado para os LOGS do SIEM
+CREATE TABLESPACE TS_KAWASHI_SIEM_LOGS 
+DATAFILE 'ts_kawashi_siem.dbf' SIZE 50M AUTOEXTEND ON;
+
+-- 3. Criando as Roles corporativas de privilégios mínimos
+CREATE ROLE ROLE_KAWASHI_DEVELOPER;
+GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW TO ROLE_KAWASHI_DEVELOPER;
+
+CREATE ROLE ROLE_KAWASHI_INFRA;
+GRANT CREATE SESSION, SELECT ANY DICTIONARY TO ROLE_KAWASHI_INFRA;
