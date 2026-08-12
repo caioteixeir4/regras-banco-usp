@@ -10,12 +10,30 @@ services:
       - "1521:1521"                  # Porta padrão do Oracle (Local:Container).
     environment:
       - ORACLE_PASSWORD=${ORACLE_PASSWORD}       # Senha do usuário SYS/SYSTEM (Admin Root do banco).
-      - APP_USER=${APP_USER}                     # Nome do usuário que o Spring Boot usará.
-      - APP_USER_PASSWORD=${APP_USER_PASSWORD}   # Senha inicial do usuário da aplicação.
+      # A imagem gvenzl/oracle-free exige que estas duas variaveis se chamem exatamente
+      # APP_USER/APP_USER_PASSWORD DENTRO do container (contrato da propria imagem, nao
+      # da Kawashi) - por isso a "ponte" abaixo: no nosso .env o nome e SPRING_APP_USER
+      # (mais claro que e a conta do Spring Boot), mas repassamos pro container com o
+      # nome que a imagem espera.
+      - APP_USER=${SPRING_APP_USER}
+      - APP_USER_PASSWORD=${SPRING_APP_USER_PASSWORD}
+      - ENGINEER_USER=${ENGINEER_USER}           # Usuário pessoal do engenheiro do projeto (privilégio DBA).
+      - ENGINEER_USER_PASSWORD=${ENGINEER_USER_PASSWORD}
     volumes:
       # Ponto de montagem para scripts de inicialização automática.
       # Qualquer arquivo .sql em ./oracle-init será executado no primeiro boot.
-      - ./oracle-init:/container-entrypoint-initdb.d 
+      - ./oracle-init:/container-entrypoint-initdb.d
+    # O Oracle demora de 1 a 3+ minutos pra ficar pronto no primeiro boot (criando o banco,
+    # depois rodando os 9 scripts de oracle-init). Sem isso, "docker compose up" parece
+    # terminado mas o banco ainda nao aceita conexao - o healthcheck.sh ja vem pronto na
+    # imagem gvenzl/oracle-free exatamente pra sinalizar esse estado.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    restart: unless-stopped
     networks:
       - kawashi-net # Conecta o banco à rede privada interna.
 
