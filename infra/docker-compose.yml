@@ -36,6 +36,21 @@ services:
     restart: unless-stopped
     networks:
       - kawashi-net # Conecta o banco à rede privada interna.
+    # #########################################################################
+    # 🔒 TODO SEGURANÇA PENDENTE - HARDENING DE REDE (nao ativo ainda)
+    # #########################################################################
+    # Criptografia em transito (SQLNET.ENCRYPTION) + bloqueio de reconfiguracao
+    # remota do listener (ADMIN_RESTRICTIONS_LISTENER) ja estao PRONTOS pra
+    # aplicar, mas de proposito NAO estao automatizados aqui - sao mudancas em
+    # arquivo de rede do Oracle (sqlnet.ora/listener.ora), nao em SQL, e um erro
+    # ali derruba o listener inteiro (pior que um bug de trigger).
+    #
+    # Conteudo pronto:  infra/oracle-network-config/*.append
+    # Passo a passo:    infra/docs/hardening-rede.md
+    #
+    # Aplicar manualmente, e SO depois do ambiente ja ter subido limpo pelo
+    # menos uma vez (verify-environment.ps1 sem erro). Nao esquecer.
+    # #########################################################################
 
   # ---------------------------------------------------------
   # O Cofre da Kawashi (HashiCorp Vault)

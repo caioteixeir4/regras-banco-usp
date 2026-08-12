@@ -25,16 +25,25 @@ fluxo de onboarding via Vault), veja [`infra/docs/arquitetura.md`](infra/docs/ar
 
 ### Banco de dados e hardening (bootstrap automático)
 Tudo abaixo roda sozinho na primeira inicialização do container Oracle, via os scripts
-numerados em [`infra/oracle-init/`](infra/oracle-init/) (`01` a `09` — os comentários de cada
+numerados em [`infra/oracle-init/`](infra/oracle-init/) (`01` a `10` — os comentários de cada
 arquivo explicam o "porquê" de cada peça, não só o "o quê"):
 
 - Tablespaces separadas para dados de negócio, logs de auditoria e cada ambiente de ciclo
-  de vida (`01`, `09`).
+  de vida, todas com `MAXSIZE` (nunca crescimento ilimitado) — `01`, `09`.
 - Política de senha (12+ caracteres, maiúscula/minúscula/número/especial, sem o username) +
   profile de segurança (bloqueio por tentativas, expiração a cada 90 dias, histórico de
-  reuso, idle time, limite de sessões) — `02_global_hardening.sql`.
+  reuso, idle time, limite de sessões — com `RESOURCE_LIMIT=TRUE` habilitado, sem o qual boa
+  parte desses limites de sessão seriam ignorados pelo Oracle) — `02_global_hardening.sql`.
+  Hardening mínimo (bloqueio por tentativa + política de senha) também aplicado ao profile
+  `DEFAULT`, como rede de segurança para contas futuras criadas sem profile explícito.
 - Unified Auditing nativo do Oracle para `CREATE/ALTER/DROP USER`, `GRANT/REVOKE`,
-  `LOGON/LOGOFF` — `02_global_hardening.sql`.
+  `LOGON/LOGOFF` — `02_global_hardening.sql` — com purga automática configurada
+  (`DBMS_AUDIT_MGMT`) para não crescer indefinidamente no `SYSAUX` — `10_advanced_hardening.sql`.
+- Proteção contra força bruta na camada de protocolo (`SEC_MAX_FAILED_LOGIN_ATTEMPTS`),
+  complementar ao bloqueio de conta por tentativa — `10_advanced_hardening.sql`.
+- Pacotes de rede/arquivo/Java historicamente usados em ataques via SQL Injection
+  (`UTL_HTTP`, `UTL_TCP`, `UTL_SMTP`, `UTL_INADDR`, `UTL_FILE`, `DBMS_JAVA`) tiveram o
+  `EXECUTE` revogado de `PUBLIC` — `10_advanced_hardening.sql`.
 - Trilha de auditoria própria (`KAWASHI_SECURITY_LOG` + tabela de fallback), alimentada por
   triggers de logon, logoff, DDL e concessão de privilégio — `03`, `04`, `05`.
 - Regras contextuais de logon: whitelist de IP, janela de horário, blacklist de ferramentas
@@ -80,6 +89,15 @@ configurados **por código** ([`infra/scripts/vault-init.ps1`](infra/scripts/vau
 não mais manualmente pela UI. Falta: nenhuma aplicação ainda lê segredo do Vault em runtime
 (não existe app Spring Boot ainda), e as credenciais de app continuam estáticas — isso é o
 item **Dynamic Credentials** no roadmap abaixo, ainda pendente.
+
+### Hardening de rede — pronto pra aplicar, manual por segurança
+Criptografia em trânsito (`SQLNET.ENCRYPTION`) e bloqueio de reconfiguração remota do
+listener (`ADMIN_RESTRICTIONS_LISTENER`) estão documentados e prontos em
+[`infra/oracle-network-config/`](infra/oracle-network-config/), com o passo a passo em
+[`infra/docs/hardening-rede.md`](infra/docs/hardening-rede.md). Não rodam automaticamente no
+boot de propósito — são mudanças em arquivo de rede do Oracle (`sqlnet.ora`/`listener.ora`),
+não em SQL, e um erro ali derruba o listener inteiro. Aplique manualmente, só depois do
+ambiente já ter subido limpo pelo menos uma vez.
 
 ## 📋 Master Blueprint (To-Do List)
 

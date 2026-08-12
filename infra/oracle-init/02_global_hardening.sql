@@ -83,6 +83,36 @@ CREATE PROFILE KAWASHI_SECURE_PROFILE LIMIT
     PASSWORD_VERIFY_FUNCTION   KAWASHI_PASSWORD_VERIFY;
 
 -- #########################################################
+-- CORREÇÃO CRÍTICA - RESOURCE_LIMIT (sem isto, 3 dos limites acima NÃO FAZEM NADA)
+-- #########################################################
+-- Pegadinha real do Oracle: os limites de SENHA (FAILED_LOGIN_ATTEMPTS,
+-- PASSWORD_LIFE_TIME, PASSWORD_LOCK_TIME, PASSWORD_GRACE_TIME, PASSWORD_REUSE_*,
+-- PASSWORD_VERIFY_FUNCTION) SEMPRE valem, nao importa nada. Mas os limites de
+-- "RECURSO DE SESSAO" (SESSIONS_PER_USER, IDLE_TIME, CONNECT_TIME) so entram
+-- em vigor se o parametro de sistema RESOURCE_LIMIT estiver TRUE - e o padrao
+-- de fabrica do Oracle e FALSE. Ou seja: sem a linha abaixo, estivemos
+-- "protegidos" contra senha fraca e forca bruta, mas SESSIONS_PER_USER=3,
+-- IDLE_TIME=30 e CONNECT_TIME=720 do KAWASHI_SECURE_PROFILE estavam sendo
+-- silenciosamente ignorados - nenhum erro, nenhum aviso, simplesmente nao
+-- fariam efeito nenhum. E dinamico (nao precisa reiniciar o banco).
+ALTER SYSTEM SET RESOURCE_LIMIT = TRUE;
+
+-- #########################################################
+-- REDE DE SEGURANÇA - hardening minimo tambem no profile DEFAULT
+-- #########################################################
+-- Todo usuario criado SEM especificar "PROFILE X" cai automaticamente no
+-- profile "DEFAULT", que de fabrica e essencialmente sem limite nenhum. Se um
+-- dia alguem (ou um script futuro) esquecer de escrever "PROFILE
+-- KAWASHI_SECURE_PROFILE" na hora de criar um usuario, essa conta nasceria
+-- SEM politica de senha e SEM bloqueio por tentativa - um jeito facil de
+-- reintroduzir uma conta fraca sem querer. Aplicar o minimo tambem no
+-- DEFAULT e uma segunda camada pra esse erro humano nao passar despercebido.
+ALTER PROFILE DEFAULT LIMIT
+    FAILED_LOGIN_ATTEMPTS      5
+    PASSWORD_LOCK_TIME         1/24
+    PASSWORD_VERIFY_FUNCTION   KAWASHI_PASSWORD_VERIFY;
+
+-- #########################################################
 -- PASSO 11 - TRILHA DE AUDITORIA UNIFICADA (ORACLE 23ai COMPLIANT)
 -- #########################################################
 -- "Unified Auditing" e o mecanismo de auditoria nativo e atual do Oracle

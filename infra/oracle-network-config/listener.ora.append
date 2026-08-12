@@ -1,0 +1,9 @@
+# Trecho para ADICIONAR ao listener.ora existente do container (nao substituir
+# o arquivo inteiro). Troque LISTENER pelo nome real do seu listener se for
+# diferente - confirme com "lsnrctl status" dentro do container antes de aplicar.
+# Ver infra/docs/hardening-rede.md para o passo a passo de como aplicar.
+
+# Bloqueia reconfiguracao remota do listener via comandos TNS (ex: SET
+# TRC_LEVEL, STOP) - so quem tiver acesso local ao SO do container consegue
+# administrar o listener depois disso.
+ADMIN_RESTRICTIONS_LISTENER = ON
