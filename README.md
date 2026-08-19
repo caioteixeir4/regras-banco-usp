@@ -21,6 +21,10 @@ fluxo de onboarding via Vault), veja [`infra/docs/arquitetura.md`](infra/docs/ar
 5. Para dar acesso a alguém (inclusive você mesmo, se quiser um perfil além do `ENGINEER_USER`),
    use `infra/scripts/create-team-member.ps1` — ver [`infra/docs/criar-novo-usuario.md`](infra/docs/criar-novo-usuario.md).
 
+Todo este fluxo já foi validado ponta a ponta contra um Oracle/Vault reais — 7 bugs foram
+encontrados e corrigidos nesse processo. Detalhes de cada um (sintoma, causa raiz, correção)
+em [`infra/docs/bugs-primeiro-teste.md`](infra/docs/bugs-primeiro-teste.md).
+
 ## ✅ O que já está implementado
 
 ### Banco de dados e hardening (bootstrap automático)

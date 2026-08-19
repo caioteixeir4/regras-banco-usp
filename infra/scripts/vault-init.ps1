@@ -141,7 +141,14 @@ if ($engineJaExiste) {
     Write-Host "   Ja existe - nada a fazer." -ForegroundColor DarkGray
 } else {
     Write-Host "   Nao existe ainda - habilitando KV v2 em '$KvEnginePath'..."
-    Invoke-VaultCommand secrets enable -path=$KvEnginePath -version=2 kv | Out-Null
+    # CORRIGIDO (achado testando ao vivo): um argumento comecando com "-" (tipo
+    # -path=$KvEnginePath) NAO interpola a variavel quando passado direto pra
+    # uma funcao com ValueFromRemainingArguments - o PowerShell trata o token
+    # inteiro como se fosse um nome de parametro literal, sem expandir "$..." .
+    # O resultado real foi um engine criado com o nome LITERAL "$KvEnginePath"
+    # (o texto, nao o valor "kawashi-secrets"). Colocar entre aspas duplas
+    # forca a interpolacao acontecer ANTES do parser tratar o "-" como flag.
+    Invoke-VaultCommand secrets enable "-path=$KvEnginePath" "-version=2" kv | Out-Null
     Write-Host "   Habilitado." -ForegroundColor Green
 }
 

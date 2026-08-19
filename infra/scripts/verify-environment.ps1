@@ -29,6 +29,23 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# CORRIGIDO (achado testando ao vivo): o PowerShell 5.1 sempre insere um BOM
+# UTF-8 no inicio de qualquer conteudo enviado via pipe "|" pra um processo
+# externo, independente de $OutputEncoding - o sqlplus le esse BOM como parte
+# do primeiro comando e o rejeita (SP2-0734). A solucao que realmente
+# funciona: mandar o SQL como BASE64 num argumento de linha de comando (sem
+# BOM, sem interpretacao de shell) e decodificar dentro do container antes de
+# repassar pro sqlplus. A connect string (com senha) vai via variavel de
+# ambiente, nao embutida na string do shell, pra nao arriscar caracteres
+# especiais da senha sendo interpretados pelo shell dentro do container.
+function Invoke-SqlPlus {
+    param([string]$ConnectString, [string]$Sql)
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Sql)
+    $b64 = [Convert]::ToBase64String($bytes)
+    $innerCmd = 'echo ' + $b64 + ' | base64 -d | sqlplus -s "$ORACLE_CONNSTR"'
+    return docker exec -i -e ORACLE_CONNSTR="$ConnectString" kawashi-oracle sh -c "$innerCmd" 2>&1
+}
+
 function Get-DotEnv {
     param([string]$Path)
     if (-not (Test-Path $Path)) {
@@ -72,10 +89,16 @@ ORDER BY name, sequence;
 EXIT;
 "@
 
-$objetosOutput = $sqlObjetos | docker exec -i kawashi-oracle sqlplus -s $connectString 2>&1
+$objetosOutput = Invoke-SqlPlus -ConnectString $connectString -Sql $sqlObjetos
 Write-Host $objetosOutput
 
-if ($objetosOutput -match 'no rows selected' -or $objetosOutput -notmatch '\bKAWASHI') {
+# CORRIGIDO (achado testando ao vivo, mesmo bug do create-team-member.ps1):
+# docker exec retorna array de linhas - "-notmatch" filtrado elemento a
+# elemento praticamente sempre da "verdadeiro" (quase sempre sobra alguma
+# linha sem 'KAWASHI'), o que mascararia um objeto invalido de verdade.
+# Juntar numa string antes de comparar resolve.
+$objetosOutputStr = $objetosOutput -join "`n"
+if ($objetosOutputStr -match 'no rows selected' -or $objetosOutputStr -notmatch '\bKAWASHI') {
     Write-Host "   Nenhum objeto KAWASHI_* invalido encontrado." -ForegroundColor Green
 } else {
     Write-Host "   ATENCAO: revise a saida acima - pode haver objeto invalido." -ForegroundColor Yellow
@@ -101,7 +124,7 @@ FETCH FIRST 10 ROWS ONLY;
 EXIT;
 "@
 
-$jobsOutput = $sqlJobs | docker exec -i kawashi-oracle sqlplus -s $connectString 2>&1
+$jobsOutput = Invoke-SqlPlus -ConnectString $connectString -Sql $sqlJobs
 Write-Host $jobsOutput
 
 Write-Host ""

@@ -67,6 +67,14 @@ services:
       - "8200:8200"
     environment:
       - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
+      # CORRIGIDO (achado testando ao vivo): o modo -dev sobe em HTTP puro, sem
+      # TLS, mas o CLI "vault" por padrao assume HTTPS (https://127.0.0.1:8200)
+      # quando VAULT_ADDR nao esta definida - toda chamada via docker exec vault
+      # falhava com "server gave HTTP response to HTTPS client". Definindo aqui
+      # no proprio container, todo `docker exec kawashi-vault vault ...` (nos
+      # scripts create-team-member.ps1 e vault-init.ps1) ja usa o endereco certo
+      # sem precisar repetir isso em cada chamada.
+      - VAULT_ADDR=http://127.0.0.1:8200
     command: server -dev -dev-listen-address="0.0.0.0:8200"
     restart: unless-stopped
     networks:

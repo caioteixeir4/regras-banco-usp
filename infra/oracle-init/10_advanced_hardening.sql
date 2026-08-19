@@ -16,7 +16,16 @@ ALTER SESSION SET CONTAINER = FREEPDB1;
 -- versao do Oracle quanto a poder ser alterado em memoria; SPFILE e o modo
 -- seguro (grava na configuracao persistente, exige um restart do banco pra
 -- valer - o que ja acontece naturalmente quando o container for recriado).
+--
+-- CORRIGIDO (achado testando ao vivo): este parametro e de escopo do CDB
+-- inteiro, nao do PDB - tentar setar de dentro do FREEPDB1 (todo arquivo
+-- deste projeto comeca com ALTER SESSION SET CONTAINER = FREEPDB1) falha com
+-- ORA-65040 ("Operation is not allowed from within a pluggable database").
+-- Por isso trocamos pro CDB$ROOT so para este comando, e voltamos pro PDB
+-- logo em seguida (o resto deste arquivo continua operando no FREEPDB1).
+ALTER SESSION SET CONTAINER = CDB$ROOT;
 ALTER SYSTEM SET SEC_MAX_FAILED_LOGIN_ATTEMPTS = 3 SCOPE = SPFILE;
+ALTER SESSION SET CONTAINER = FREEPDB1;
 
 -- #########################################################
 -- PASSO 19 - PURGA AUTOMATICA DO UNIFIED AUDIT TRAIL

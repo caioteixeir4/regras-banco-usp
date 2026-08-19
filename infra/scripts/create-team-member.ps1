@@ -74,6 +74,37 @@ param(
 $ErrorActionPreference = 'Stop'
 $Username = $Username.ToUpper()
 
+# CORRIGIDO (achado testando ao vivo): o PowerShell 5.1 sempre insere um BOM
+# UTF-8 no inicio de qualquer conteudo enviado via pipe "|" pra um processo
+# externo - nem $OutputEncoding nem trocar de codificacao resolvem isso (e
+# uma particularidade do pipeline do PowerShell 5.1 em si, nao da ferramenta
+# de destino). O sqlplus e o "vault policy write" leem esse BOM como parte do
+# primeiro comando/linha e o rejeitam (SP2-0734 / "illegal char").
+#
+# A solucao que realmente funciona: em vez de fazer pipe do conteudo (heredoc)
+# pro processo, mandamos o conteudo como BASE64 dentro de um unico argumento
+# de linha de comando (que o PowerShell passa sem BOM e sem interpretacao de
+# shell), e decodificamos DENTRO do container antes de repassar pro sqlplus/
+# vault. Dados sensiveis (connect string com senha) tambem NAO vao embutidos
+# como texto na string do comando shell - vao via variavel de ambiente (-e),
+# evitando que caracteres especiais da senha (%, ^, etc.) sejam interpretados
+# por engano pelo shell dentro do container.
+function Invoke-SqlPlus {
+    param([string]$ConnectString, [string]$Sql)
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Sql)
+    $b64 = [Convert]::ToBase64String($bytes)
+    $innerCmd = 'echo ' + $b64 + ' | base64 -d | sqlplus -s "$ORACLE_CONNSTR"'
+    return docker exec -i -e ORACLE_CONNSTR="$ConnectString" kawashi-oracle sh -c "$innerCmd" 2>&1
+}
+
+function Write-VaultPolicy {
+    param([string]$VaultToken, [string]$PolicyName, [string]$PolicyHcl)
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($PolicyHcl)
+    $b64 = [Convert]::ToBase64String($bytes)
+    $innerCmd = 'echo ' + $b64 + ' | base64 -d | vault policy write ' + $PolicyName + ' -'
+    return docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault sh -c "$innerCmd" 2>&1
+}
+
 # Traduz o -Profile em comandos SQL concretos (proxy authentication ou role de
 # leitura). Ver infra/oracle-init/09_environments.sql para o racional completo
 # de por que cada perfil recebe exatamente esses ambientes.
@@ -183,7 +214,7 @@ EXIT;
 "@
 
 $connectString = "$EngineerUser/$EngineerPassword@//localhost:1521/FREEPDB1"
-$sqlOutput = $sql | docker exec -i kawashi-oracle sqlplus -s $connectString 2>&1
+$sqlOutput = Invoke-SqlPlus -ConnectString $connectString -Sql $sql
 Write-Verbose ($sqlOutput -join "`n")
 
 if ($sqlOutput -match 'ORA-\d{5}') {
@@ -210,10 +241,16 @@ path "auth/userpass/users/$Username" {
 }
 "@
 
-$policyHcl | docker exec -i -e VAULT_TOKEN=$VaultToken kawashi-vault vault policy write $policyName - | Out-Null
+Write-VaultPolicy -VaultToken $VaultToken -PolicyName $policyName -PolicyHcl $policyHcl | Out-Null
 
-# Habilita o metodo de login userpass uma unica vez (ignora erro se ja existir)
-$authList = docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault auth list -format=json 2>&1
+# Habilita o metodo de login userpass uma unica vez (ignora erro se ja existir).
+# CORRIGIDO (achado testando ao vivo): docker exec retorna a saida como um
+# ARRAY de linhas no PowerShell - "-notmatch" contra um array filtra elemento
+# por elemento (quase sempre sobra alguma linha que nao bate com "userpass/",
+# ja que o JSON tem varias linhas), entao a condicao praticamente sempre dava
+# TRUE mesmo com o metodo ja habilitado. Juntando tudo numa unica string
+# antes de comparar, o -notmatch passa a checar o conteudo inteiro de uma vez.
+$authList = (docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault auth list -format=json 2>&1) -join "`n"
 if ($authList -notmatch 'userpass/') {
     docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault auth enable userpass | Out-Null
 }
