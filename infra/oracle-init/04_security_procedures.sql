@@ -38,7 +38,18 @@ BEGIN
         SYS_CONTEXT('USERENV', 'SESSION_USER'),
         SYS_CONTEXT('USERENV', 'OS_USER'),
         SYS_CONTEXT('USERENV', 'IP_ADDRESS'),
-        SYS_CONTEXT('USERENV', 'CLIENT_PROGRAM'),
+        -- CORRIGIDO (achado em infra/tests/caixa-branca/Test-TrilhaSegurancaPropria.ps1):
+        -- "CLIENT_PROGRAM" NAO e um atributo valido de USERENV (o nome certo e
+        -- "CLIENT_PROGRAM_NAME") - toda chamada desta procedure, desde o
+        -- primeiro boot do projeto, levantava ORA-02003 ("invalid USERENV
+        -- attribute") bem aqui. Como isto roda dentro do bloco EXCEPTION WHEN
+        -- OTHERS por design (ver cabecalho deste arquivo), o erro nunca
+        -- aparecia pra ninguem - ele so caia silenciosamente na tabela de
+        -- fallback (KAWASHI_SECURITY_LOG_FALLBACK), que acumulou 1782 falhas
+        -- identicas sem que nenhum SUCCESSFUL_LOGIN/DDL_MODIFICATION/etc.
+        -- jamais chegasse a ser gravado na trilha principal. A trilha "feliz"
+        -- deste projeto nunca funcionou ate este teste existir.
+        SYS_CONTEXT('USERENV', 'CLIENT_PROGRAM_NAME'),
         P_EVENT_TYPE,
         P_DETAILS
     );

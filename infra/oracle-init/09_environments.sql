@@ -116,12 +116,42 @@ GRANT CREATE SESSION TO ROLE_KAWASHI_HOMOLOG_VIEWER;
 -- dentro do schema KAWASHI_ENV_HOMOLOG, ele concede SELECT automaticamente
 -- pra role de QA - sem isso, cada tabela nova ficaria invisivel pro QA ate
 -- alguem lembrar de rodar um GRANT manual.
+--
+-- BUG ENCONTRADO TESTANDO AO VIVO (infra/tests/caixa-branca/Test-HomologAutograntTrigger.ps1):
+-- a primeira versao deste trigger chamava "EXECUTE IMMEDIATE 'GRANT ...'"
+-- diretamente no corpo do AFTER CREATE. Isso SEMPRE falhava com ORA-04088 /
+-- ORA-30511 ("invalid DDL operation in system triggers") assim que alguem de
+-- verdade proxyava pra KAWASHI_ENV_HOMOLOG e tentava criar uma tabela - ou
+-- seja, o trigger quebrava exatamente a unica coisa que Homologacao existe
+-- pra permitir. O Oracle proibe rodar outra DDL (GRANT incluso) de dentro de
+-- um trigger de schema que esta reagindo a uma DDL, porque o objeto que
+-- disparou o trigger ainda nao terminou de ser gravado no dicionario.
+--
+-- A solucao padrao do Oracle pra esse caso e NAO rodar o GRANT na hora: o
+-- trigger agenda um job (DBMS_SCHEDULER.CREATE_JOB, execucao imediata,
+-- auto_drop) que roda o GRANT numa sessao/transacao totalmente separada,
+-- milissegundos depois - fora do contexto restrito do trigger. Por isso
+-- KAWASHI_ENV_HOMOLOG tambem precisa do privilegio CREATE JOB (ver GRANT
+-- logo abaixo), que nao fazia parte do conjunto de GRANTs da secao 2.
+GRANT CREATE JOB TO KAWASHI_ENV_HOMOLOG;
+
 CREATE OR REPLACE TRIGGER KAWASHI_ENV_HOMOLOG.KAWASHI_HOMOLOG_AUTOGRANT_TRG
 AFTER CREATE ON KAWASHI_ENV_HOMOLOG.SCHEMA
+DECLARE
+    v_owner VARCHAR2(128) := ORA_DICT_OBJ_OWNER;
+    v_name  VARCHAR2(128) := ORA_DICT_OBJ_NAME;
+    v_type  VARCHAR2(128) := ORA_DICT_OBJ_TYPE;
 BEGIN
-    IF ORA_DICT_OBJ_TYPE IN ('TABLE', 'VIEW') THEN
-        EXECUTE IMMEDIATE 'GRANT SELECT ON ' || ORA_DICT_OBJ_OWNER || '.' || ORA_DICT_OBJ_NAME ||
-                           ' TO ROLE_KAWASHI_HOMOLOG_VIEWER';
+    IF v_type IN ('TABLE', 'VIEW') THEN
+        DBMS_SCHEDULER.CREATE_JOB(
+            job_name   => 'KAWASHI_AUTOGRANT_' || TO_CHAR(SYSTIMESTAMP, 'HH24MISSFF3'),
+            job_type   => 'PLSQL_BLOCK',
+            job_action => 'BEGIN EXECUTE IMMEDIATE ''GRANT SELECT ON ' || v_owner || '.' || v_name ||
+                          ' TO ROLE_KAWASHI_HOMOLOG_VIEWER''; END;',
+            start_date => SYSTIMESTAMP,
+            enabled    => TRUE,
+            auto_drop  => TRUE
+        );
     END IF;
 END;
 /

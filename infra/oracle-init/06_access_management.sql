@@ -58,7 +58,13 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20098, 'APP_USER fora do padrao de nomenclatura.');
     END IF;
 
-    EXECUTE IMMEDIATE 'ALTER USER ' || V_APP_USER || ' PROFILE KAWASHI_SECURE_PROFILE';
+    -- CORRIGIDO (achado testando ao vivo, ver item 14 de infra/docs/bugs-primeiro-teste.md):
+    -- KAWASHI_SECURE_PROFILE e pensado pra pessoa (SESSIONS_PER_USER=3) - um
+    -- pool de conexoes de verdade (HikariCP, 10 conexoes por padrao) quebraria
+    -- a aplicacao na propria inicializacao. KAWASHI_SERVICE_PROFILE (ver
+    -- 02_global_hardening.sql) mantem a mesma politica de senha, mas com
+    -- limites de sessao/tempo dimensionados pra uma conta de servico.
+    EXECUTE IMMEDIATE 'ALTER USER ' || V_APP_USER || ' PROFILE KAWASHI_SERVICE_PROFILE';
     EXECUTE IMMEDIATE 'ALTER USER ' || V_APP_USER || ' DEFAULT TABLESPACE TS_KAWASHI_DATA';
 
     -- CORRIGIDO (achado testando contra o Oracle de verdade): a imagem

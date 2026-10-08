@@ -161,7 +161,15 @@ function New-StrongPassword {
     $upperSet   = [char[]](65..90)
     $lowerSet   = [char[]](97..122)
     $digitSet   = [char[]](48..57)
-    $specialSet = [char[]]'!@#%^*-_=+?'
+    # CORRIGIDO (achado em infra/tests/caixa-preta/Test-ConexaoNovoUsuario.ps1):
+    # o conjunto original incluia "@", que e o PROPRIO separador usado pelo
+    # Oracle Easy Connect ("usuario/senha@host"). Uma senha gerada contendo
+    # "@" quebra qualquer "sqlplus usuario/senha@//host:porta/servico" digitado
+    # por uma pessoa (ou montado por um script) - o parser corta no "@" de
+    # DENTRO da senha, antes de chegar no "@" de verdade, e o Oracle tenta
+    # resolver um pedaco da senha como se fosse hostname (ORA-12262). Removido
+    # do conjunto de especiais por esse motivo (o "/" ja nao fazia parte dele).
+    $specialSet = [char[]]'!#%^*-_=+?'
     $allSets    = $upperSet + $lowerSet + $digitSet + $specialSet
 
     do {
@@ -203,7 +211,18 @@ $profileStatements = (Get-ProfileStatements -Profile $Profile -Username $Usernam
 $extraRoleStatements = ($Roles | ForEach-Object { "GRANT $_ TO $Username;" }) -join "`n"
 $grantStatements = @($profileStatements, $extraRoleStatements) -join "`n"
 
+# CORRIGIDO (achado em infra/tests/caixa-preta/Test-UsuarioDuplicado.ps1): por
+# padrao, o SQL*Plus NAO para no primeiro erro de um script - ele so imprime o
+# erro e continua pra proxima instrucao. Sem "WHENEVER SQLERROR EXIT", rodar
+# este script com um -Username que ja existe fazia o "CREATE USER" falhar
+# (ORA-01920) mas as linhas SEGUINTES (QUOTA, GRANTs de proxy do -Profile,
+# PASSWORD EXPIRE) rodavam normalmente contra o usuario JA EXISTENTE - ou
+# seja, uma tentativa de onboarding que o PowerShell reportava como FALHA (por
+# causa do "throw" mais abaixo) na pratica concedia acesso de verdade a uma
+# conta que ja existia, inclusive de um -Profile diferente do original. Com
+# "WHENEVER SQLERROR EXIT", o primeiro erro interrompe o script inteiro.
 $sql = @"
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 ALTER SESSION SET CONTAINER = FREEPDB1;
 CREATE USER $Username IDENTIFIED BY "$TempDbPassword" PROFILE KAWASHI_SECURE_PROFILE DEFAULT TABLESPACE TS_KAWASHI_DATA;
 ALTER USER $Username QUOTA 500M ON TS_KAWASHI_DATA;

@@ -42,9 +42,20 @@ BEGIN
     -- proprio banco de subir. Isso e tambem o motivo pelo qual pessoas nao devem logar
     -- como SYS/SYSTEM no dia a dia (ver infra/oracle-init/08_engineer_account.sql):
     -- e a unica conta que escapa de toda a fiscalizacao deste trigger.
+    -- NOTA (confirmado em infra/tests/caixa-branca/Test-TrilhaSegurancaPropria.ps1):
+    -- esta ramificacao so e alcancavel de fato por um login normal como
+    -- SYSTEM. Uma conexao "AS SYSDBA" (o jeito usual de logar como SYS) NAO
+    -- dispara nenhum "AFTER LOGON ON DATABASE" - e autenticada por um
+    -- caminho (arquivo de senha/SO) que existe justamente pra funcionar
+    -- mesmo se um trigger de usuario estiver quebrado, entao o Oracle a
+    -- isenta de proposito. Nao e um bug: so significa que logins via SYSDBA
+    -- nunca aparecerao em KAWASHI_SECURITY_LOG nenhum jeito, nem como
+    -- PRIVILEGED_LOGIN - se isso importar no futuro, a trilha de auditoria
+    -- pra acessos SYSDBA e outra (o Oracle grava esses separadamente, em
+    -- $ORACLE_BASE/audit ou na Unified Audit Trail com AUDSID proprio).
     IF V_CURRENT_USER IN ('SYS', 'SYSTEM') THEN
         KAWASHI_WRITE_SECURITY_LOG(
-            'PRIVILEGED_LOGIN', 
+            'PRIVILEGED_LOGIN',
             'Acesso administrativo direto estabelecido na infraestrutura.'
         );
         RETURN;
@@ -203,13 +214,31 @@ END;
 -- primeira linha de defesa contra escalonamento de privilegio silencioso -
 -- se um usuario comprometido tentar se auto-conceder mais poder (ou dar poder
 -- a um comparsa), fica registrado aqui, mesmo que a conta usada tenha DBA.
+-- CORRIGIDO (achado em infra/tests/caixa-branca/Test-TrilhaSegurancaPropria.ps1):
+-- ORA_DICT_OBJ_NAME so e populado para DDL que muda um OBJETO DE SCHEMA
+-- (tabela, view, etc.) - um "GRANT role/privilegio_de_sistema TO usuario"
+-- (exatamente o caso que mais importa pra deteccao de escalonamento de
+-- privilegio) nao tem "objeto" nesse sentido, entao ORA_DICT_OBJ_NAME vinha
+-- SEMPRE vazio aqui. Na pratica, toda linha de PRIVILEGE_GRANT_ALERT dizia so
+-- "Beneficiado/Objeto: " (em branco) - o evento mais sensivel deste projeto
+-- nunca registrou quem recebeu o que. Trocado por ORA_SQL_TXT, que reconstroi
+-- o texto da propria instrucao GRANT (funciona tanto para GRANT de role/
+-- privilegio de sistema quanto para GRANT em objeto especifico).
 CREATE OR REPLACE TRIGGER KAWASHI_PRIVESC_AUDIT_TRG
 AFTER GRANT ON DATABASE
+DECLARE
+    V_SQL_LINES ORA_NAME_LIST_T;
+    V_SQL_TEXT  VARCHAR2(4000) := '';
+    V_N         PLS_INTEGER;
 BEGIN
     IF SYS_CONTEXT('USERENV', 'SESSION_USER') NOT IN ('SYS', 'SYSTEM') THEN
+        V_N := ORA_SQL_TXT(V_SQL_LINES);
+        FOR I IN 1..V_N LOOP
+            V_SQL_TEXT := V_SQL_TEXT || V_SQL_LINES(I);
+        END LOOP;
         KAWASHI_WRITE_SECURITY_LOG(
             'PRIVILEGE_GRANT_ALERT',
-            'Concessao realizada por: ' || SYS_CONTEXT('USERENV', 'SESSION_USER') || ' | Beneficiado/Objeto: ' || ORA_DICT_OBJ_NAME
+            'Concessao realizada por: ' || SYS_CONTEXT('USERENV', 'SESSION_USER') || ' | Comando: ' || SUBSTR(V_SQL_TEXT, 1, 3500)
         );
     END IF;
 END;

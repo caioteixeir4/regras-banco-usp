@@ -83,6 +83,68 @@ CREATE PROFILE KAWASHI_SECURE_PROFILE LIMIT
     PASSWORD_VERIFY_FUNCTION   KAWASHI_PASSWORD_VERIFY;
 
 -- #########################################################
+-- PROFILE SEPARADO PARA CONTAS DE SERVIÇO/APLICAÇÃO (POOL DE CONEXÕES)
+-- #########################################################
+-- ACHADO TESTANDO AO VIVO (infra/tests/outros/Test-LimiteSessoesAplicacao.ps1,
+-- ver item 14 de infra/docs/bugs-primeiro-teste.md): o SPRING_APP_USER usava
+-- KAWASHI_SECURE_PROFILE - o mesmo profile pensado para uma PESSOA logando
+-- interativamente. SESSIONS_PER_USER=3 faz sentido pra uma pessoa (ela abre
+-- no maximo umas poucas conexoes ao mesmo tempo), mas e incompativel com um
+-- POOL DE CONEXOES de verdade: o HikariCP (pool padrao do Spring Boot) abre
+-- 10 conexoes por padrao - a aplicacao quebraria na propria inicializacao do
+-- pool, nao em algum pico raro de carga.
+--
+-- Os limites de SESSAO de uma pessoa e de um POOL sao fundamentalmente
+-- diferentes, entao a solucao nao e so "aumentar o numero" no mesmo profile -
+-- e ter um profile proprio para esse tipo de conta:
+--   SESSIONS_PER_USER  50        -> acomoda um pool de verdade (10) com folga
+--                                   generosa (multiplas instancias da
+--                                   aplicacao, picos), mas ainda um numero
+--                                   FINITO - funciona como rede de seguranca
+--                                   contra um bug de vazamento de conexao
+--                                   crescendo sem limite nenhum.
+--   IDLE_TIME          UNLIMITED -> uma conexao de POOL fica ociosa por
+--                                   natureza entre requisicoes - isso e
+--                                   esperado, nao um sinal de abandono como
+--                                   seria numa sessao de pessoa. Reciclagem de
+--                                   conexao e responsabilidade do PRÓPRIO
+--                                   pool (ex: maxLifetime do HikariCP), nao do
+--                                   Oracle derrubando no meio por tempo ocioso.
+--   CONNECT_TIME       UNLIMITED -> pela mesma razao: uma conexao pooled pode
+--                                   legitimamente viver dias - o Oracle
+--                                   forcando reconexao a cada 12h (o valor do
+--                                   profile de pessoa) so causaria erros
+--                                   intermitentes que o pool teria que
+--                                   absorver, sem ganho de seguranca real (a
+--                                   credencial em si continua protegida pelo
+--                                   Vault e pela politica de senha abaixo).
+--   PASSWORD_LIFE_TIME UNLIMITED -> o MESMO motivo pelo qual PASSWORD EXPIRE
+--                                   nunca foi aplicado nesta conta (ver item 4
+--                                   de bugs-primeiro-teste.md): nao existe
+--                                   humano pra responder a um prompt
+--                                   interativo de troca de senha quando ela
+--                                   expira sozinha aos 90 dias. A rotacao
+--                                   desta credencial e responsabilidade de
+--                                   quem administra o Vault, feita por
+--                                   ALTER USER explicito, nao pelo relogio
+--                                   automatico do profile.
+-- FAILED_LOGIN_ATTEMPTS, PASSWORD_LOCK_TIME, PASSWORD_REUSE_* e
+-- PASSWORD_VERIFY_FUNCTION continuam IGUAIS ao profile de pessoa - nada aqui
+-- abre mao de forca de senha nem de protecao contra forca bruta, so ajusta os
+-- limites que sao especificamente sobre o PADRAO DE USO (pessoa vs pool).
+CREATE PROFILE KAWASHI_SERVICE_PROFILE LIMIT
+    FAILED_LOGIN_ATTEMPTS      5
+    PASSWORD_LOCK_TIME         1/24
+    PASSWORD_LIFE_TIME         UNLIMITED
+    PASSWORD_GRACE_TIME        UNLIMITED
+    PASSWORD_REUSE_TIME        365
+    PASSWORD_REUSE_MAX         10
+    SESSIONS_PER_USER          50
+    IDLE_TIME                  UNLIMITED
+    CONNECT_TIME               UNLIMITED
+    PASSWORD_VERIFY_FUNCTION   KAWASHI_PASSWORD_VERIFY;
+
+-- #########################################################
 -- CORREÇÃO CRÍTICA - RESOURCE_LIMIT (sem isto, 3 dos limites acima NÃO FAZEM NADA)
 -- #########################################################
 -- Pegadinha real do Oracle: os limites de SENHA (FAILED_LOGIN_ATTEMPTS,

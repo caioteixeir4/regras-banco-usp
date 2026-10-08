@@ -20,8 +20,10 @@ fluxo de onboarding via Vault), veja [`infra/docs/arquitetura.md`](infra/docs/ar
    script configura o engine de segredos e o login por usuário/senha.
 5. Para dar acesso a alguém (inclusive você mesmo, se quiser um perfil além do `ENGINEER_USER`),
    use `infra/scripts/create-team-member.ps1` — ver [`infra/docs/criar-novo-usuario.md`](infra/docs/criar-novo-usuario.md).
+6. (Opcional, mas recomendado) Rode a suíte de testes automatizados —
+   `infra/tests/Run-AllTests.ps1` — ver [`infra/tests/README.md`](infra/tests/README.md).
 
-Todo este fluxo já foi validado ponta a ponta contra um Oracle/Vault reais — 7 bugs foram
+Todo este fluxo já foi validado ponta a ponta contra um Oracle/Vault reais — 13 bugs foram
 encontrados e corrigidos nesse processo. Detalhes de cada um (sintoma, causa raiz, correção)
 em [`infra/docs/bugs-primeiro-teste.md`](infra/docs/bugs-primeiro-teste.md).
 
