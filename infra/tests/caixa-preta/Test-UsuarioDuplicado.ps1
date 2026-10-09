@@ -29,7 +29,7 @@ $username = New-ThrowawayUsername -Prefix 'TST_DUP'
 $results = @()
 
 try {
-    & $createScript -Username $username -Profile 'Estagiario' -EnvFile $EnvFile *> $null
+    & $createScript -Username $username -Profile 'EstagiarioDev' -EnvFile $EnvFile *> $null
     $outCriados = (Invoke-SqlPlus -ConnectString $engineerConn -Sql "SET PAGESIZE 0`nSET FEEDBACK OFF`nSELECT username FROM dba_users WHERE username = '$username';`nEXIT;`n") -join "`n"
     $results += New-TestResult -Name "Primeira criacao de '$username' funciona" -Passed ($outCriados -match [regex]::Escape($username)) -Details $(if ($outCriados -notmatch [regex]::Escape($username)) { $outCriados })
 
@@ -45,11 +45,14 @@ try {
     $results += New-TestResult -Name "Erro da segunda tentativa menciona ORA-01920 (nome ja existe)" -Passed ($erroSegunda -match 'ORA-01920') -Details $(if ($erroSegunda -notmatch 'ORA-01920') { $erroSegunda })
 
     # A tentativa que falhou foi a de perfil "Desenvolvedor" - confirma que o
-    # usuario continua com o PERFIL ORIGINAL (Estagiario: so proxy pra TESTE),
-    # ou seja, a tentativa fracassada nao alterou o estado do usuario existente.
+    # usuario continua com o PERFIL ORIGINAL (EstagiarioDev: so proxy pra
+    # TESTE_DEV), ou seja, a tentativa fracassada nao alterou o estado do
+    # usuario existente.
     $outProxy = (Invoke-SqlPlus -ConnectString $engineerConn -Sql "SET PAGESIZE 0`nSET FEEDBACK OFF`nSELECT client FROM proxy_users WHERE proxy = '$username';`nEXIT;`n") -join "`n"
-    $manteveOriginal = ($outProxy -match 'KAWASHI_ENV_TESTE') -and ($outProxy -notmatch 'KAWASHI_ENV_DEV')
-    $results += New-TestResult -Name "Usuario existente mantem o perfil original (Estagiario) - tentativa duplicada nao alterou nada" -Passed $manteveOriginal -Details $(if (-not $manteveOriginal) { $outProxy })
+    # "KAWASHI_ENV_DEV" nao e substring de "KAWASHI_ENV_TESTE_DEV" (tem
+    # "_TESTE_" no meio) - os dois matches nao colidem entre si.
+    $manteveOriginal = ($outProxy -match 'KAWASHI_ENV_TESTE_DEV') -and ($outProxy -notmatch 'KAWASHI_ENV_DEV')
+    $results += New-TestResult -Name "Usuario existente mantem o perfil original (EstagiarioDev) - tentativa duplicada nao alterou nada" -Passed $manteveOriginal -Details $(if (-not $manteveOriginal) { $outProxy })
 
     # Nao deve ter sobrado policy/login userpass no Vault de uma tentativa que
     # nem chegou a mexer no Vault (CREATE USER falha ANTES do passo de Vault).
@@ -71,7 +74,7 @@ finally {
 # Confirma que, depois de removido, o mesmo nome pode ser usado de novo sem
 # nenhum resquicio da primeira conta atrapalhar.
 try {
-    & $createScript -Username $username -Profile 'Estagiario' -EnvFile $EnvFile *> $null
+    & $createScript -Username $username -Profile 'EstagiarioDev' -EnvFile $EnvFile *> $null
     $outRecriado = (Invoke-SqlPlus -ConnectString $engineerConn -Sql "SET PAGESIZE 0`nSET FEEDBACK OFF`nSELECT username FROM dba_users WHERE username = '$username';`nEXIT;`n") -join "`n"
     $results += New-TestResult -Name "Apos remover, o mesmo nome de usuario pode ser recriado sem erro" -Passed ($outRecriado -match [regex]::Escape($username)) -Details $(if ($outRecriado -notmatch [regex]::Escape($username)) { $outRecriado })
 }

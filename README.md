@@ -23,7 +23,7 @@ fluxo de onboarding via Vault), veja [`infra/docs/arquitetura.md`](infra/docs/ar
 6. (Opcional, mas recomendado) Rode a suíte de testes automatizados —
    `infra/tests/Run-AllTests.ps1` — ver [`infra/tests/README.md`](infra/tests/README.md).
 
-Todo este fluxo já foi validado ponta a ponta contra um Oracle/Vault reais — 13 bugs foram
+Todo este fluxo já foi validado ponta a ponta contra um Oracle/Vault reais — 15 bugs foram
 encontrados e corrigidos nesse processo. Detalhes de cada um (sintoma, causa raiz, correção)
 em [`infra/docs/bugs-primeiro-teste.md`](infra/docs/bugs-primeiro-teste.md).
 
@@ -64,8 +64,11 @@ arquivo explicam o "porquê" de cada peça, não só o "o quê"):
   trancadas — `06_access_management.sql`.
 - Conta pessoal do engenheiro do projeto, separada do `SYS`/`SYSTEM`, com privilégio total
   (`DBA`) documentado como decisão temporária enquanto o desenvolvimento é solo — `08`.
-- 5 ambientes de ciclo de vida (**Teste, Desenvolvimento, Infra, Homologação, Produção**)
-  como schemas isolados logicamente, com acesso via *proxy authentication* — `09`.
+- 6 ambientes de ciclo de vida (**Teste-Dev, Teste-Infra, Desenvolvimento, Infra, Homologação,
+  Produção**) como schemas isolados logicamente, com acesso via *proxy authentication* — `09`.
+- Segmentação por serviço DENTRO de cada ambiente: tabelas padrão compartilhadas (ex: `CLIENTE`)
+  mais schemas de serviço (ex: `SEFAZ`, `SIMPLES_NACIONAL`) com FK de volta pro padrão, visíveis
+  só a quem tem liberação explícita — `09` (schemas/grants) e `11` (exemplo ilustrativo).
 
 ### RBAC — perfis de acesso do time
 Perfis prontos que já definem automaticamente em qual ambiente cada pessoa pode
@@ -73,10 +76,15 @@ ler/escrever, sem grant manual por tabela:
 
 | Perfil | Ambientes liberados |
 |---|---|
-| `Estagiario` | Teste |
+| `EstagiarioDev` | Teste-Dev |
+| `EstagiarioInfra` | Teste-Infra |
 | `Desenvolvedor` | Desenvolvimento + Homologação |
 | `Infra` | Infra + Homologação |
 | `HomologViewer` | Homologação (somente leitura) |
+
+Além do perfil, `-Servicos` concede acesso ADITIVO a schemas de serviço específicos (ex:
+`-Servicos SEFAZ`) em todo ambiente que o perfil já alcança — ver `.PARAMETER Servicos` em
+`create-team-member.ps1`.
 
 Detalhes e racional completo: [`infra/oracle-init/09_environments.sql`](infra/oracle-init/09_environments.sql)
 e [`infra/docs/criar-novo-usuario.md`](infra/docs/criar-novo-usuario.md).
@@ -111,9 +119,14 @@ Itens já cobertos (parcial ou totalmente) pela seção "O que já está impleme
 aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 
 1. Camada de Infraestrutura e Banco de Dados (O Bunker)
-- [~] Setup de 5 Bases: isolamento **lógico** feito (5 schemas + tablespaces + proxy
-      authentication). Isolamento **físico** (PDBs ou containers/instâncias separadas) ainda
-      pendente — depende da arquitetura de hospedagem (local vs AWS) ser decidida.
+- [~] Setup de 6 Bases: isolamento **lógico** feito (6 schemas de ambiente + tablespaces + proxy
+      authentication, incluindo a divisão TESTE em TESTE_DEV/TESTE_INFRA por equipe). Isolamento
+      **físico** (PDBs ou containers/instâncias separadas) ainda pendente — depende da
+      arquitetura de hospedagem (local vs AWS) ser decidida.
+- [~] Segmentação por serviço: schemas padrão + serviço (SEFAZ/SIMPLES_NACIONAL de exemplo) com
+      FK e GRANT SELECT entre eles, liberação aditiva via `-Servicos`. Falta: sincronização
+      automática de estrutura entre ambientes quando uma tabela de serviço é promovida (migração
+      de schema, tipo Flyway/Liquibase) e acesso restrito/temporário a Homologação e Produção.
 - [ ] TDE (Transparent Data Encryption): Configurar criptografia em repouso no nível de Tablespace para o "balde" do Java.
 - [ ] Data Redaction: Configurar máscaras em tempo real (ex: ocultar dígitos de CPF/Cartão) baseadas na Role do usuário.
 - [ ] VPD (Virtual Private Database): Criar políticas para que a equipe de infra nunca veja linhas de dados de documentos de negócio.
@@ -167,7 +180,7 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - A conta pessoal do engenheiro do projeto (`ENGINEER_USER`, ver [`infra/oracle-init/08_engineer_account.sql`](infra/oracle-init/08_engineer_account.sql))
   recebeu `GRANT DBA` (privilégio total) por decisão consciente, enquanto o desenvolvimento é solo.
   Reduzir para privilégios explícitos assim que houver mais de uma pessoa operando o banco.
-- Isolamento dos 5 ambientes (Teste/Dev/Infra/Homologação/Produção) é lógico, não físico —
+- Isolamento dos 6 ambientes (Teste-Dev/Teste-Infra/Dev/Infra/Homologação/Produção) é lógico, não físico —
   todos rodam na mesma instância Oracle hoje. Ver nota no item 1 do roadmap.
 - Ainda não decidido: quando a aplicação Spring Boot for a produção de verdade, ela deve
   conectar contra o schema `KAWASHI_ENV_PROD` (o "Produção" deste modelo de ambientes), ou o

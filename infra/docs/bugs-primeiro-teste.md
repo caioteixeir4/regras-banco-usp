@@ -7,11 +7,13 @@ teria pego — só rodando de verdade. Este documento registra cada um: o sintom
 e a correção, para servir de referência caso algo parecido apareça de novo (ou para explicar,
 numa apresentação/defesa, que o projeto foi validado na prática, não só no papel).
 
-Mais cinco problemas (itens 8 a 12 abaixo) apareceram depois, em rodadas seguintes de testes —
+Mais problemas (itens 8 a 17 abaixo) apareceram depois, em rodadas seguintes de testes —
 desta vez escrevendo e expandindo a suíte automatizada em `infra/tests/` (ver
-`infra/tests/README.md`) em vez de testar na mão. Os itens 11 e 12 são os mais graves do
-documento inteiro: a trilha de auditoria própria do projeto nunca tinha gravado uma única linha
-de verdade, desde o primeiro boot.
+`infra/tests/README.md`) em vez de testar na mão. Os itens 11 e 12 são os mais graves em termos de
+auditoria (a trilha de segurança própria nunca tinha gravado uma única linha de verdade, desde o
+primeiro boot); o item 15 é o mais grave em termos de controle de acesso (o próprio script de
+onboarding permitia conceder `DBA` completo a qualquer conta, sem nenhuma resistência); o item 17
+apareceu implementando a segmentação por serviço descrita em `infra/tests/README.md` e no item 16.
 
 ## 1. `SEC_MAX_FAILED_LOGIN_ATTEMPTS` setado no PDB errado
 
@@ -375,6 +377,88 @@ especificamente sobre *padrão de uso* (pessoa vs. pool):
 Confirmado com `infra/tests/outros/Test-LimiteSessoesAplicacao.ps1`: 8 conexões simultâneas de
 verdade (mais que o padrão do HikariCP) agora são todas aceitas, nenhuma rejeitada por
 `ORA-02391`.
+
+## 15. `-Roles` do script de onboarding aceitava QUALQUER role, incluindo `DBA`
+
+**Sintoma:** rodando `infra/tests/caixa-preta/Test-RolesPerigosasBloqueadas.ps1` (antes da
+correção existir), o comando abaixo funcionava sem nenhuma resistência:
+```powershell
+./create-team-member.ps1 -Username ATACANTE -Profile Estagiario -Roles @('DBA')
+```
+Um usuário **Estagiário** — o perfil mais restrito do projeto — saía da criação com a role `DBA`
+completa, confirmado consultando `DBA_ROLE_PRIVS` logo em seguida. Testado ao vivo, não é
+hipotético.
+
+**Causa raiz:** o parâmetro `-Roles` (pensado para "exceções pontuais", segundo seu próprio texto
+de ajuda) era um `[string[]]` **sem nenhuma validação** — aceitava literalmente qualquer string,
+incluindo roles nativas do Oracle com poder administrativo total (`DBA`, `SYSDBA`,
+`IMP_FULL_DATABASE`, `EXP_FULL_DATABASE`, etc.). Isso tornava o script de onboarding do dia a dia
+— pensado para criar contas de **baixo privilégio** — num caminho trivial de escalonamento para
+privilégio **total**: qualquer pessoa capaz de rodar o script (ou seja, com acesso ao `.env`)
+podia conceder DBA completo a si mesma ou a qualquer outra conta, contornando inteiramente o
+modelo de RBAC (perfis Estagiário/Desenvolvedor/Infra/HomologViewer) que é a espinha dorsal deste
+projeto.
+
+**Correção** (`create-team-member.ps1`): adicionado `[ValidateSet(...)]` ao parâmetro `-Roles`,
+restringindo-o às cinco roles **próprias** da Kawashi (`ROLE_KAWASHI_DEVELOPER`,
+`ROLE_KAWASHI_INFRA`, `ROLE_KAWASHI_HOMOLOG_VIEWER`, `KAWASHI_READONLY`, `KAWASHI_READWRITE`) —
+nenhuma delas chega perto de poder administrativo (a mais ampla, `ROLE_KAWASHI_INFRA`, só dá
+`CREATE SESSION` + `SELECT ANY DICTIONARY`). Qualquer tentativa de passar uma role fora dessa
+lista agora é rejeitada pelo **parâmetro do PowerShell**, antes de qualquer conexão com o
+Oracle/Vault — o mesmo padrão de defesa já usado para `-Username`/`-Profile` (ver item de
+`Test-InjecaoUsernamePerfil.ps1`).
+
+## 16. (achado arquitetural, não um bug de código) Dentro do mesmo ambiente, qualquer pessoa pode apagar o que outra criou
+
+**Pergunta que motivou a investigação:** "não é por que o usuário criou a tabela que ele vai
+poder deletar ou fazer qualquer coisa nela - vai que pedimos para o estagiário criar uma tabela
+simples que será usada em algum ponto do projeto, ele não pode ter toda essa liberdade nunca."
+
+**Confirmado ao vivo** (`infra/tests/caixa-preta/Test-ControleColetivoDentroDoAmbiente.ps1`): dois
+Estagiários **diferentes**, ambos proxyados em `KAWASHI_ENV_TESTE`, criaram e depois um apagou a
+tabela do outro — sem nenhum erro, sem nenhuma restrição. O Estagiário B conseguiu `INSERT` e
+`DROP TABLE` numa tabela que o Estagiário A tinha criado.
+
+**Por que isso acontece:** autenticação por proxy faz a pessoa "virar" a identidade do **schema
+do ambiente** (`KAWASHI_ENV_TESTE`) durante a sessão — e posse de objeto no Oracle (como em
+qualquer banco relacional tradicional) é sempre do **schema que criou o objeto**, nunca da pessoa
+que estava conectada na hora. Como todo mundo com perfil Estagiário proxya para o **mesmo**
+`KAWASHI_ENV_TESTE`, todo objeto criado em TESTE pertence igualmente a qualquer um deles. O mesmo
+vale para DEV, INFRA e HOMOLOG (cada um com seu próprio grupo compartilhado).
+
+**Isto não é um bug do código Kawashi** — é uma característica de como o modelo de posse do
+Oracle funciona, e não tem correção possível só revogando um privilégio pontual. Corrigir de
+verdade exigiria uma mudança de arquitetura (por exemplo, cada pessoa com schema próprio e grants
+objeto-a-objeto, em vez de identidade compartilhada por ambiente via proxy) — uma decisão de
+design que cabe a quem mantém o projeto tomar, não a este teste.
+
+**O que já contém esse risco hoje:** ele fica **limitado ao próprio ambiente** — reconfirmado no
+mesmo teste que o Estagiário B continua sem nenhum acesso a DEV/INFRA/HOMOLOG/PROD. Ou seja,
+"promover" algo de TESTE para DEV/HOMOLOG (saindo do alcance de quem criou em TESTE) é, hoje, a
+única proteção real contra esse tipo de perda — **dentro** do mesmo ambiente, não existe proteção
+nenhuma entre pessoas diferentes com o mesmo perfil.
+
+## 17. `GRANT REFERENCES` habilita a FK mas não dá nenhuma permissão de leitura
+
+**Sintoma:** implementando a segmentação por serviço (schemas padrão + SEFAZ/SIMPLES_NACIONAL,
+ver `09_environments.sql` seção 2.1 e `11_exemplo_dominio_negocio.sql`), um `Desenvolvedor` com
+`-Servicos SEFAZ` conseguia criar a tabela de serviço com a foreign key apontando pra tabela
+padrão (`CLIENTE`) sem problema — mas o primeiro `SELECT` com `JOIN` entre as duas, exatamente o
+motivo de a FK existir, falhava:
+```
+ORA-41900: missing READ privilege on "KAWASHI_ENV_DEV"."CLIENTE"
+```
+
+**Causa raiz:** `REFERENCES` e `SELECT` são privilégios **completamente separados** no Oracle —
+`REFERENCES` só habilita criar a *constraint* de chave estrangeira (o Oracle precisa confirmar
+que a coluna referenciada é única/existe), não concede nenhum direito de **ler** os dados da
+tabela referenciada. É perfeitamente possível (e foi exatamente o que aconteceu aqui) ter uma FK
+válida e funcional sem conseguir fazer `SELECT` do outro lado dela.
+
+**Correção** (`11_exemplo_dominio_negocio.sql`): além do `GRANT REFERENCES` já previsto, cada
+schema de serviço recebe `GRANT SELECT` em **todas** as tabelas padrão do mesmo ambiente (não só
+na que tem FK direta) — a ideia sendo que quem tem acesso a um serviço enxerga o padrão inteiro
+daquele ambiente, não só o pedaço que uma FK específica toca.
 
 ## Validação final
 

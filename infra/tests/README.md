@@ -43,7 +43,7 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (28 arquivos, 173 casos):
+Arquivos de teste atuais, por categoria (35 arquivos, 238 casos):
 
 - `unitarios/`: `Test-PasswordVerifyFunction.ps1`
 - `caixa-branca/`: `Test-ProfileEHardeningInternals.ps1`, `Test-HomologAutograntTrigger.ps1`,
@@ -56,11 +56,14 @@ Arquivos de teste atuais, por categoria (28 arquivos, 173 casos):
   `Test-PermissoesHomologViewerSomenteLeitura.ps1`, `Test-BloqueioOsUserInseguro.ps1`,
   `Test-RevogacoesPublicPerigosas.ps1`, `Test-EscalonamentoPrivilegioBloqueado.ps1`,
   `Test-MetadadoVsConteudo.ps1`, `Test-InjecaoUsernamePerfil.ps1`, `Test-RolesExtras.ps1`,
-  `Test-ReusoSenhaImediatoBloqueado.ps1`, `Test-CriacaoConcorrente.ps1`
+  `Test-ReusoSenhaImediatoBloqueado.ps1`, `Test-CriacaoConcorrente.ps1`,
+  `Test-CriacaoObjetosBloqueadaPorPerfil.ps1`, `Test-RolesPerigosasBloqueadas.ps1`,
+  `Test-DropPluggableDatabaseBloqueado.ps1`, `Test-ControleColetivoDentroDoAmbiente.ps1`,
+  `Test-SegmentacaoPorServico.ps1`
 - `outros/`: `Test-OnboardingEndToEnd.ps1`, `Test-ConexaoAplicacaoSpring.ps1`,
   `Test-LimiteSessoesAplicacao.ps1`
 
-### Mais três (sem bug novo - confirmam que o que existe já funciona)
+### Rodada "sem bug novo" (confirmam que o que existe já funciona)
 
 - `Test-ReusoSenhaImediatoBloqueado.ps1`: `PASSWORD_REUSE_TIME`/`PASSWORD_REUSE_MAX` realmente
   impedem voltar pra senha anterior (`ORA-28007`), não só estão declarados no profile.
@@ -69,6 +72,47 @@ Arquivos de teste atuais, por categoria (28 arquivos, 173 casos):
   remoção acidental quanto sobra de objeto de debug esquecido).
 - `Test-CriacaoConcorrente.ps1`: 3 onboardings rodando ao mesmo tempo de verdade (`Start-Job`) -
   todos terminam com sucesso e sem contaminação cruzada entre os segredos/policies do Vault.
+
+### Rodada "garantir que quem deveria ser barrado realmente é barrado"
+
+- `Test-CriacaoObjetosBloqueadaPorPerfil.ps1`: `CREATE TRIGGER`/`PROCEDURE`/`SEQUENCE`/`VIEW`/`TABLE`
+  testados por perfil - inclusive a fronteira exata (nunca testada antes) de
+  `ROLE_KAWASHI_DEVELOPER`, que dá `TABLE`/`VIEW` mas não `SEQUENCE`/`PROCEDURE`/`TRIGGER`.
+- `Test-PermissoesCrudPorAmbiente.ps1` e `Test-PermissoesHomologViewerSomenteLeitura.ps1`: ganharam
+  checagem de `INSERT`/`UPDATE`/`DELETE`/`ALTER TABLE`/`DROP TABLE` numa tabela de **outro dono**
+  (em tabela própria, isso é sempre permitido por posse, não por privilégio - não faz sentido
+  testar ali).
+- `Test-DropPluggableDatabaseBloqueado.ps1`: nem um usuário comum nem o `ENGINEER_USER` (DBA
+  dentro do PDB) conseguem derrubar o banco inteiro (`DROP PLUGGABLE DATABASE`, o equivalente
+  Oracle de `DROP DATABASE`) - bloqueado em duas camadas independentes.
+- `Test-RolesPerigosasBloqueadas.ps1`: achado crítico, **corrigido** - ver item 15 de
+  `bugs-primeiro-teste.md`. O parâmetro `-Roles` de `create-team-member.ps1` aceitava
+  literalmente qualquer role, incluindo `DBA`.
+- `Test-ControleColetivoDentroDoAmbiente.ps1`: achado arquitetural importante, **não é bug de
+  código** - ver item 16 de `bugs-primeiro-teste.md`. Dentro do mesmo ambiente (TESTE/DEV/INFRA/
+  HOMOLOG), qualquer pessoa pode apagar o que outra pessoa criou, porque a posse no Oracle é do
+  schema do ambiente (compartilhado via proxy), não da pessoa.
+
+### Rodada "segmentação por serviço + divisão do TESTE por equipe"
+
+Resposta direta ao achado do `Test-ControleColetivoDentroDoAmbiente.ps1` acima: o ambiente
+`TESTE` único virou dois (`TESTE_DEV`/`TESTE_INFRA`, um por equipe, perfis `EstagiarioDev`/
+`EstagiarioInfra`) e cada um dos 6 ambientes ganhou schemas de SERVIÇO (`SEFAZ`,
+`SIMPLES_NACIONAL` de exemplo) com tabelas padrão compartilhadas (`CLIENTE`, `ENDERECO`, etc.) e
+liberação aditiva via `-Servicos` - ver `09_environments.sql` seção 2.1,
+`11_exemplo_dominio_negocio.sql`, e o plano completo em
+[`bugs-primeiro-teste.md`](../docs/bugs-primeiro-teste.md).
+
+- `Test-MatrizAcessoPorPerfil.ps1` cresceu de 4 para 5 perfis e de 5 para 6 ambientes - cobre
+  `EstagiarioDev`/`EstagiarioInfra` cada um só no seu próprio `TESTE_*`, então uma
+  `Test-DivisaoTesteDevInfra.ps1` separada seria pura duplicação e não foi criada.
+- `Test-SegmentacaoPorServico.ps1` (novo): confirma que sem `-Servicos` o schema de serviço nem
+  aceita login via proxy; que com `-Servicos SEFAZ` dá pra escrever no serviço E ler a tabela
+  padrão via `JOIN` (FK de verdade funcionando); e que a liberação é estritamente por serviço -
+  ter SEFAZ não dá SIMPLES_NACIONAL de brinde.
+- Achado real no caminho (item 17 de `bugs-primeiro-teste.md`): `GRANT REFERENCES` só habilita
+  criar a FK, não dá nenhuma permissão de leitura - o primeiro `JOIN` entre serviço e padrão
+  falhava com `ORA-41900: missing READ privilege` até adicionar `GRANT SELECT` explícito.
 
 ### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 

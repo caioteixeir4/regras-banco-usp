@@ -82,6 +82,12 @@ try {
 
     $outCreate = (Invoke-SqlPlus -ConnectString $qaConn -Sql "CREATE TABLE TESTE_NAO_DEVERIA_EXISTIR (id NUMBER);`nEXIT;`n") -join "`n"
     $results += New-TestResult -Name "HomologViewer NAO consegue CREATE TABLE em canto nenhum (ORA-01031)" -Passed ($outCreate -match 'ORA-01031') -Details $(if ($outCreate -notmatch 'ORA-01031') { $outCreate })
+
+    $outAlter = (Invoke-SqlPlus -ConnectString $qaConn -Sql "ALTER TABLE KAWASHI_ENV_HOMOLOG.$tabela ADD coluna_indevida VARCHAR2(10);`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "HomologViewer NAO consegue ALTER TABLE em Homologacao" -Passed ($outAlter -match $negadoPorPrivilegio) -Details $(if ($outAlter -notmatch $negadoPorPrivilegio) { $outAlter })
+
+    $outDropAlheio = (Invoke-SqlPlus -ConnectString $qaConn -Sql "DROP TABLE KAWASHI_ENV_HOMOLOG.$tabela;`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "HomologViewer NAO consegue DROP TABLE em Homologacao" -Passed ($outDropAlheio -match $negadoPorPrivilegio) -Details $(if ($outDropAlheio -notmatch $negadoPorPrivilegio) { $outDropAlheio })
 }
 finally {
     Write-Host "-> Limpando tabela de teste, usuarios descartaveis e artefatos no Vault..."

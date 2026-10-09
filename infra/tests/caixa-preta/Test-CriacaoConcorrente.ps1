@@ -40,7 +40,7 @@ $jobs = $usuarios | ForEach-Object {
     Start-Job -ScriptBlock {
         param($CreateScript, $Username, $EnvFile)
         try {
-            & $CreateScript -Username $Username -Profile 'Estagiario' -EnvFile $EnvFile *> $null
+            & $CreateScript -Username $Username -Profile 'EstagiarioDev' -EnvFile $EnvFile *> $null
             return @{ Username = $Username; Ok = $true; Erro = $null }
         } catch {
             return @{ Username = $Username; Ok = $false; Erro = $_.Exception.Message }

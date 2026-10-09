@@ -48,12 +48,15 @@ flowchart TB
 
 Cada perfil de pessoa só alcança os ambientes liberados pra ele, via *proxy authentication*
 (a pessoa loga com o próprio usuário, mas "atua como" o schema do ambiente). Produção só é
-alcançada manualmente, pelo engenheiro do projeto:
+alcançada manualmente, pelo engenheiro do projeto. O antigo ambiente único "TESTE" virou dois -
+um por equipe (`TESTE_DEV`/`TESTE_INFRA`) - espelhando a separação que já existia entre
+`DEV`/`INFRA`:
 
 ```mermaid
 flowchart LR
     subgraph Pessoas["Perfis de pessoas"]
-        Estagiario["🧑‍🎓 Estagiário"]
+        EstagiarioDev["🧑‍🎓 EstagiarioDev"]
+        EstagiarioInfra["🧑‍🔧 EstagiarioInfra"]
         Desenvolvedor["👩‍💻 Desenvolvedor"]
         Infra["🛠️ Infra"]
         QA["🔍 QA / HomologViewer"]
@@ -62,14 +65,16 @@ flowchart LR
     end
 
     subgraph Ambientes["Schemas de ambiente (KAWASHI_ENV_*)"]
-        Teste[("TESTE")]
+        TesteDev[("TESTE_DEV")]
+        TesteInfra[("TESTE_INFRA")]
         Dev[("DESENVOLVIMENTO")]
         InfraEnv[("INFRA")]
         Homolog[("HOMOLOGAÇÃO")]
         Prod[("PRODUÇÃO")]
     end
 
-    Estagiario -- "CONNECT THROUGH" --> Teste
+    EstagiarioDev -- "CONNECT THROUGH" --> TesteDev
+    EstagiarioInfra -- "CONNECT THROUGH" --> TesteInfra
     Desenvolvedor -- "CONNECT THROUGH" --> Dev
     Desenvolvedor -- "CONNECT THROUGH" --> Homolog
     Infra -- "CONNECT THROUGH" --> InfraEnv
@@ -87,14 +92,56 @@ flowchart LR
 **O que prestar atenção aqui:**
 - **Ninguém** chega em Produção por acesso direto — nem Desenvolvedor, nem Infra. Só o
   `ENGINEER_USER` (privilégio `DBA`) escreve lá, manualmente, uma vez por mês.
-- Estagiário **não** tem nenhuma seta chegando em Homologação — a revisão do trabalho dele
+- Nenhum Estagiário (Dev ou Infra) tem seta chegando em Homologação — a revisão do trabalho deles
   acontece no Git (pull request), não no banco. Só quem já tem acesso a Desenvolvimento ou
   Infra consegue promover algo pra Homologação.
 - QA/HomologViewer é o único perfil que **não usa proxy** — ele lê Homologação através de uma
   role de `SELECT`, porque não deveria ter poder de escrita/DDL ali (proxy daria isso de
   brinde, então evitamos).
-- Isso é isolamento **lógico** (schemas diferentes), não físico — todos os 5 ambientes ainda
+- Isso é isolamento **lógico** (schemas diferentes), não físico — todos os 6 ambientes ainda
   rodam dentro do mesmo container/instância Oracle. Ver Technical Debts no README.
+
+## 2.1 Segmentação por serviço DENTRO de cada ambiente
+
+Além da divisão por estágio de ciclo de vida, cada ambiente acima tem uma segunda camada: tabelas
+**padrão** (compartilhadas, ex: `CLIENTE`) e schemas de **serviço** (ex: `SEFAZ`,
+`SIMPLES_NACIONAL`) com tabelas específicas que referenciam o padrão via FK, mas só são visíveis
+a quem tem liberação explícita pra aquele serviço (parâmetro `-Servicos` do onboarding, aditivo e
+independente do perfil). O exemplo abaixo usa o ambiente DEV, mas o mesmo desenho existe em cada
+um dos 6 ambientes:
+
+```mermaid
+flowchart TB
+    subgraph DEV["Ambiente DEV"]
+        Padrao["📋 KAWASHI_ENV_DEV (padrão)
+        CLIENTE, ENDERECO, EMPRESA, FILIAL, CONTATO, SOCIO"]
+        Sefaz["🗂️ KAWASHI_ENV_DEV_SEFAZ
+        CONFIGURACAO_FISCAL"]
+        Simples["🗂️ KAWASHI_ENV_DEV_SIMPLES_NACIONAL
+        (vazio - exemplo ainda não criado)"]
+    end
+
+    Sefaz -- "FK: CLIENTE_ID → CLIENTE.ID
+    (REFERENCES + SELECT)" --> Padrao
+    Simples -.-> Padrao
+
+    DevComPadrao["👩‍💻 Desenvolvedor (qualquer um)"] -- "CONNECT THROUGH" --> Padrao
+    DevComSefaz["👩‍💻 Desenvolvedor -Servicos SEFAZ"] -- "CONNECT THROUGH" --> Sefaz
+```
+
+**O que prestar atenção aqui:**
+- A FK é **só de ida**: o schema de serviço referencia o padrão (`SEFAZ.CONFIGURACAO_FISCAL.CLIENTE_ID
+  → KAWASHI_ENV_DEV.CLIENTE.ID`) - o padrão nunca sabe que SEFAZ existe, nem referencia nada nele.
+  Isso é o que mantém o padrão reutilizável por qualquer serviço novo sem precisar mudar nada nele.
+- `REFERENCES` sozinho só permite **criar** a FK - não dá privilégio de leitura nenhum (achado
+  real, ver item 17 de [`bugs-primeiro-teste.md`](bugs-primeiro-teste.md)). Por isso o schema de
+  serviço também recebe `GRANT SELECT` em todas as tabelas padrão do ambiente.
+- Ter `-Servicos SEFAZ` não dá acesso a `SIMPLES_NACIONAL` de brinde - a liberação é estritamente
+  por serviço, nunca "tudo ou nada".
+- Fora do escopo por enquanto (ver `bugs-primeiro-teste.md`): sincronizar automaticamente a
+  estrutura de uma tabela de serviço entre ambientes conforme ela é promovida (TESTE_DEV → DEV →
+  HOMOLOG → PROD) - por isso as tabelas de exemplo hoje só existem em `TESTE_DEV`/`DEV`, não nos
+  outros 4 ambientes (que já têm os schemas de serviço criados, vazios, prontos pra isso).
 
 ## 3. Como uma pessoa nova recebe acesso (onboarding via Vault)
 
@@ -141,4 +188,7 @@ sequenceDiagram
 - [`onboarding-novo-membro.md`](onboarding-novo-membro.md) — guia de quem está recebendo acesso.
 - [`../oracle-init/09_environments.sql`](../oracle-init/09_environments.sql) — implementação
   dos ambientes/schemas e o racional completo de cada decisão.
+- [`../oracle-init/11_exemplo_dominio_negocio.sql`](../oracle-init/11_exemplo_dominio_negocio.sql)
+  — exemplo ilustrativo do padrão tabelas padrão + schema de serviço (não é o schema de negócio
+  final).
 - [`../../README.md`](../../README.md) — visão geral do projeto e roadmap.

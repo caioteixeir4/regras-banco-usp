@@ -28,19 +28,37 @@
     Cada perfil traduz automaticamente em quais ambientes a pessoa pode escrever, via proxy
     authentication (CONNECT THROUGH) - a pessoa nunca sabe/precisa de senha do ambiente em si:
 
-      Estagiario     -> CONNECT THROUGH KAWASHI_ENV_TESTE (so Teste)
-      Desenvolvedor  -> CONNECT THROUGH KAWASHI_ENV_DEV e KAWASHI_ENV_HOMOLOG
-      Infra          -> CONNECT THROUGH KAWASHI_ENV_INFRA e KAWASHI_ENV_HOMOLOG, + ROLE_KAWASHI_INFRA
-      HomologViewer  -> so leitura (SELECT) em Homologacao, via ROLE_KAWASHI_HOMOLOG_VIEWER -
+      EstagiarioDev   -> CONNECT THROUGH KAWASHI_ENV_TESTE_DEV (so o teste do time de Dev)
+      EstagiarioInfra -> CONNECT THROUGH KAWASHI_ENV_TESTE_INFRA (so o teste do time de Infra)
+      Desenvolvedor   -> CONNECT THROUGH KAWASHI_ENV_DEV e KAWASHI_ENV_HOMOLOG
+      Infra           -> CONNECT THROUGH KAWASHI_ENV_INFRA e KAWASHI_ENV_HOMOLOG, + ROLE_KAWASHI_INFRA
+      HomologViewer   -> so leitura (SELECT) em Homologacao, via ROLE_KAWASHI_HOMOLOG_VIEWER -
                         sem proxy, sem escrita em lugar nenhum. Pensado para QA/negocio que so
                         precisa ver a tela em homologacao, nao commitar codigo.
 
     Ninguem cria usuario com acesso a KAWASHI_ENV_PROD por este script - producao so e
     alcancada pelo ENGINEER_USER (DBA), de proposito.
 
+    CORRIGIDO: ate a versao anterior deste script existia um unico perfil "Estagiario" (so
+    ambiente TESTE, compartilhado por qualquer time). Virou EstagiarioDev/EstagiarioInfra,
+    espelhando a separacao que ja existia entre Desenvolvedor/Infra um nivel acima.
+
+.PARAMETER Servicos
+    Liberacao ADITIVA e INDEPENDENTE do -Profile para schemas de SERVICO (segmentacao por dominio
+    de negocio dentro de cada ambiente - ver secao 2.1 de infra/oracle-init/09_environments.sql).
+    Para cada servico pedido, concede CONNECT THROUGH no schema KAWASHI_ENV_<AMBIENTE>_<SERVICO>
+    de TODO ambiente que o -Profile escolhido ja alcanca - ex: -Profile Desenvolvedor -Servicos
+    SEFAZ da proxy em KAWASHI_ENV_DEV_SEFAZ E KAWASHI_ENV_HOMOLOG_SEFAZ (porque Desenvolvedor
+    alcanca os dois), sem tocar em nenhum schema SIMPLES_NACIONAL. Nao informar -Servicos
+    continua sendo valido - a pessoa so enxerga as tabelas PADRAO do(s) ambiente(s) do seu perfil.
+    Nao se aplica ao perfil HomologViewer (nao usa proxy em nenhum ambiente).
+
 .PARAMETER Roles
     Roles Oracle extras a conceder, alem do que o -Profile ja concede. Use para excecoes
-    pontuais - o caminho normal e o -Profile cobrir tudo que a pessoa precisa.
+    pontuais - o caminho normal e o -Profile cobrir tudo que a pessoa precisa. Restrito as
+    roles proprias da Kawashi (ROLE_KAWASHI_DEVELOPER, ROLE_KAWASHI_INFRA,
+    ROLE_KAWASHI_HOMOLOG_VIEWER, KAWASHI_READONLY, KAWASHI_READWRITE) - nenhuma role nativa
+    do Oracle (DBA e afins) pode ser concedida por aqui, de proposito.
 
 .PARAMETER EnvFile
     Caminho do .env com as credenciais do ENGINEER_USER (DBA) e do Vault. Padrao: infra/.env.
@@ -50,6 +68,9 @@
 
 .EXAMPLE
     ./create-team-member.ps1 -Username MARIA_QA -Profile HomologViewer
+
+.EXAMPLE
+    ./create-team-member.ps1 -Username PEDRO_SEFAZ -Profile Desenvolvedor -Servicos SEFAZ
 
 .NOTES
     Requer Docker Desktop com os containers kawashi-oracle e kawashi-vault no ar
@@ -63,9 +84,29 @@ param(
     [string]$Username,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Estagiario', 'Desenvolvedor', 'Infra', 'HomologViewer')]
+    [ValidateSet('EstagiarioDev', 'EstagiarioInfra', 'Desenvolvedor', 'Infra', 'HomologViewer')]
     [string]$Profile,
 
+    # Liberacao aditiva de schema de SERVICO (ver .PARAMETER Servicos acima) -
+    # independente do -Profile, nao concede acesso a nenhum ambiente por si so.
+    [ValidateSet('SEFAZ', 'SIMPLES_NACIONAL')]
+    [string[]]$Servicos = @(),
+
+    # CORRIGIDO (achado real, nao hipotetico: testado ao vivo concedendo DBA a
+    # um Estagiario novo via "-Roles @('DBA')" e funcionou sem nenhuma
+    # resistencia): sem ValidateSet, -Roles aceitava QUALQUER string, incluso
+    # roles nativas do Oracle como DBA, IMP_FULL_DATABASE, etc. Isso tornava
+    # este parametro de "excecao pontual" (uma role extra alem do -Profile)
+    # num caminho trivial de escalonamento de privilegio total: qualquer
+    # pessoa capaz de rodar este script (ou seja, com acesso ao .env) podia
+    # se auto-conceder - ou conceder a outra pessoa - DBA completo na hora da
+    # criacao, contornando todo o modelo de RBAC deste projeto. A lista abaixo
+    # restringe -Roles as roles PROPRIAS da Kawashi (nenhuma delas chega perto
+    # de poder administrativo - a mais ampla, ROLE_KAWASHI_INFRA, so da
+    # CREATE SESSION + SELECT ANY DICTIONARY). Se um dia precisar de poder de
+    # DBA de verdade, o caminho e 08_engineer_account.sql (bootstrap revisado
+    # manualmente), nunca este script de onboarding do dia a dia.
+    [ValidateSet('ROLE_KAWASHI_DEVELOPER', 'ROLE_KAWASHI_INFRA', 'ROLE_KAWASHI_HOMOLOG_VIEWER', 'KAWASHI_READONLY', 'KAWASHI_READWRITE')]
     [string[]]$Roles = @(),
 
     [string]$EnvFile = (Join-Path $PSScriptRoot '..\.env')
@@ -112,9 +153,14 @@ function Get-ProfileStatements {
     param([string]$Profile, [string]$Username)
 
     switch ($Profile) {
-        'Estagiario' {
+        'EstagiarioDev' {
             return @(
-                "ALTER USER KAWASHI_ENV_TESTE GRANT CONNECT THROUGH $Username;"
+                "ALTER USER KAWASHI_ENV_TESTE_DEV GRANT CONNECT THROUGH $Username;"
+            )
+        }
+        'EstagiarioInfra' {
+            return @(
+                "ALTER USER KAWASHI_ENV_TESTE_INFRA GRANT CONNECT THROUGH $Username;"
             )
         }
         'Desenvolvedor' {
@@ -136,6 +182,47 @@ function Get-ProfileStatements {
             )
         }
     }
+}
+
+# Lista os "nomes curtos" de ambiente (sem o prefixo KAWASHI_ENV_) que um
+# -Profile ja alcanca via proxy - e com essa lista que -Servicos monta os
+# nomes dos schemas de servico correspondentes (KAWASHI_ENV_<AMBIENTE>_<SERVICO>).
+# HomologViewer retorna lista vazia de proposito: esse perfil nao usa proxy em
+# nenhum ambiente (so a role de leitura), entao nao tem onde anexar um servico.
+function Get-AmbientesDoPerfil {
+    param([string]$Profile)
+
+    switch ($Profile) {
+        'EstagiarioDev'   { return @('TESTE_DEV') }
+        'EstagiarioInfra' { return @('TESTE_INFRA') }
+        'Desenvolvedor'   { return @('DEV', 'HOMOLOG') }
+        'Infra'           { return @('INFRA', 'HOMOLOG') }
+        'HomologViewer'   { return @() }
+    }
+}
+
+# Traduz -Servicos em GRANTs de proxy aditivos (ver secao 2.1 e 3 de
+# infra/oracle-init/09_environments.sql) - um por (servico x ambiente que o
+# -Profile ja alcanca). Lanca erro cedo (antes de qualquer CREATE USER) se
+# -Servicos for pedido pra um perfil que nao alcanca ambiente nenhum via
+# proxy, em vez de silenciosamente nao conceder nada.
+function Get-ServicoStatements {
+    param([string]$Profile, [string[]]$Servicos, [string]$Username)
+
+    if ($Servicos.Count -eq 0) { return @() }
+
+    $ambientes = Get-AmbientesDoPerfil -Profile $Profile
+    if ($ambientes.Count -eq 0) {
+        throw "-Servicos nao se aplica ao perfil '$Profile' (esse perfil nao usa proxy authentication em nenhum ambiente - ver 09_environments.sql)."
+    }
+
+    $statements = @()
+    foreach ($servico in $Servicos) {
+        foreach ($ambiente in $ambientes) {
+            $statements += "ALTER USER KAWASHI_ENV_${ambiente}_${servico} GRANT CONNECT THROUGH $Username;"
+        }
+    }
+    return $statements
 }
 
 function Get-DotEnv {
@@ -209,7 +296,11 @@ Write-Host "-> Criando usuario Oracle e aplicando politica de seguranca (perfil:
 
 $profileStatements = (Get-ProfileStatements -Profile $Profile -Username $Username) -join "`n"
 $extraRoleStatements = ($Roles | ForEach-Object { "GRANT $_ TO $Username;" }) -join "`n"
-$grantStatements = @($profileStatements, $extraRoleStatements) -join "`n"
+# Calculado ANTES de qualquer coisa ser criada no Oracle: se -Servicos nao se
+# aplicar ao -Profile escolhido, o erro (ver Get-ServicoStatements) precisa
+# interromper o script sem deixar nenhum usuario pela metade.
+$servicoStatements = (Get-ServicoStatements -Profile $Profile -Servicos $Servicos -Username $Username) -join "`n"
+$grantStatements = @($profileStatements, $extraRoleStatements, $servicoStatements) -join "`n"
 
 # CORRIGIDO (achado em infra/tests/caixa-preta/Test-UsuarioDuplicado.ps1): por
 # padrao, o SQL*Plus NAO para no primeiro erro de um script - ele so imprime o
@@ -304,4 +395,7 @@ Write-Host "bloqueio ativo, cadastre o IP da maquina dessa pessoa la ANTES do pr
 Write-Host "Perfil: $Profile"
 if ($Roles.Count -gt 0) {
     Write-Host "Roles extras concedidas: $($Roles -join ', ')"
+}
+if ($Servicos.Count -gt 0) {
+    Write-Host "Servicos liberados: $($Servicos -join ', ')"
 }

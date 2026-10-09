@@ -40,7 +40,7 @@ Write-Host "== [CAIXA-PRETA] Conexao direta de usuario recem-criado, por perfil 
 
 $createScript = Join-Path $PSScriptRoot '..\..\scripts\create-team-member.ps1'
 $engineerConn = Get-EngineerConnectString -EnvFile $EnvFile
-$perfis = 'Estagiario', 'Desenvolvedor', 'Infra', 'HomologViewer'
+$perfis = 'EstagiarioDev', 'EstagiarioInfra', 'Desenvolvedor', 'Infra', 'HomologViewer'
 $results = @()
 $createdUsers = @()
 

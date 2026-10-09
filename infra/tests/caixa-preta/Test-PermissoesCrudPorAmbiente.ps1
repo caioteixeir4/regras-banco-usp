@@ -72,6 +72,29 @@ try {
     $outIsolamento = (Invoke-SqlPlus -ConnectString $infraProxy -Sql "SELECT * FROM KAWASHI_ENV_DEV.$tabelaDev;`nEXIT;`n") -join "`n"
     $results += New-TestResult -Name "Infra NAO consegue ler a tabela que o Dev criou em outro ambiente (ORA-00942)" -Passed ($outIsolamento -match 'ORA-00942') -Details $(if ($outIsolamento -notmatch 'ORA-00942') { $outIsolamento })
 
+    # --- Isolamento tambem vale pra ESCRITA/ALTERACAO/DESTRUICAO, nao so leitura -
+    # (pedido explicito: INSERT/UPDATE/DELETE/ALTER TABLE/DROP TABLE numa
+    # tabela de OUTRO dono precisam estar bloqueados, nao so o SELECT).
+    $outInsertAlheio = (Invoke-SqlPlus -ConnectString $infraProxy -Sql "INSERT INTO KAWASHI_ENV_DEV.$tabelaDev VALUES (2, 'invasao');`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "Infra NAO consegue INSERT na tabela do Dev em outro ambiente (ORA-00942)" -Passed ($outInsertAlheio -match 'ORA-00942') -Details $(if ($outInsertAlheio -notmatch 'ORA-00942') { $outInsertAlheio })
+
+    $outUpdateAlheio = (Invoke-SqlPlus -ConnectString $infraProxy -Sql "UPDATE KAWASHI_ENV_DEV.$tabelaDev SET nota = 'alterado' WHERE id = 1;`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "Infra NAO consegue UPDATE na tabela do Dev em outro ambiente (ORA-00942)" -Passed ($outUpdateAlheio -match 'ORA-00942') -Details $(if ($outUpdateAlheio -notmatch 'ORA-00942') { $outUpdateAlheio })
+
+    $outDeleteAlheio = (Invoke-SqlPlus -ConnectString $infraProxy -Sql "DELETE FROM KAWASHI_ENV_DEV.$tabelaDev WHERE id = 1;`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "Infra NAO consegue DELETE na tabela do Dev em outro ambiente (ORA-00942)" -Passed ($outDeleteAlheio -match 'ORA-00942') -Details $(if ($outDeleteAlheio -notmatch 'ORA-00942') { $outDeleteAlheio })
+
+    $outAlterAlheio = (Invoke-SqlPlus -ConnectString $infraProxy -Sql "ALTER TABLE KAWASHI_ENV_DEV.$tabelaDev ADD coluna_invasora VARCHAR2(10);`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "Infra NAO consegue ALTER TABLE na tabela do Dev em outro ambiente (ORA-00942)" -Passed ($outAlterAlheio -match 'ORA-00942') -Details $(if ($outAlterAlheio -notmatch 'ORA-00942') { $outAlterAlheio })
+
+    $outDropAlheio = (Invoke-SqlPlus -ConnectString $infraProxy -Sql "DROP TABLE KAWASHI_ENV_DEV.$tabelaDev;`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "Infra NAO consegue DROP TABLE na tabela do Dev em outro ambiente (ORA-00942)" -Passed ($outDropAlheio -match 'ORA-00942') -Details $(if ($outDropAlheio -notmatch 'ORA-00942') { $outDropAlheio })
+
+    # Confirma que a tabela do Dev sobreviveu intacta a todas as tentativas
+    # acima (nenhuma teve efeito de verdade, nao so retornou erro visualmente).
+    $outIntegridade = (Invoke-SqlPlus -ConnectString $devProxy -Sql "SET PAGESIZE 0`nSET FEEDBACK OFF`nSELECT COUNT(*) FROM $tabelaDev;`nSELECT nota FROM $tabelaDev WHERE id = 1;`nEXIT;`n") -join "`n"
+    $results += New-TestResult -Name "A tabela do Dev continua intacta (1 linha, dado original) apos as tentativas de invasao do Infra" -Passed ($outIntegridade -match 'registro de teste') -Details $(if ($outIntegridade -notmatch 'registro de teste') { $outIntegridade })
+
     # --- DROP no final, de volta pelo proprio Desenvolvedor -------------------
     $outDrop = (Invoke-SqlPlus -ConnectString $devProxy -Sql "DROP TABLE $tabelaDev;`nEXIT;`n") -join "`n"
     $results += New-TestResult -Name "Desenvolvedor consegue DROP da propria tabela em DEV" -Passed ($outDrop -match 'Table dropped') -Details $(if ($outDrop -notmatch 'Table dropped') { $outDrop })

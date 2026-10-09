@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 <#
 .SYNOPSIS
-    Teste de CAIXA-PRETA: valida a matriz de acesso por perfil (Estagiario,
-    Desenvolvedor, Infra, HomologViewer) documentada em
+    Teste de CAIXA-PRETA: valida a matriz de acesso por perfil (EstagiarioDev,
+    EstagiarioInfra, Desenvolvedor, Infra, HomologViewer) documentada em
     infra/oracle-init/09_environments.sql, observando SOMENTE login/proxy
     aceito ou negado - nunca consulta DBA_TAB_PRIVS, PROXY_USERS ou qualquer
     outra tabela de catalogo para decidir o resultado.
@@ -15,7 +15,7 @@
     em producao - nao reimplementa a logica de GRANT aqui, para o teste nunca
     divergir do que o onboarding real faz), recupera a senha temporaria do
     proprio Vault (onde o onboarding a guarda) e tenta autenticar via PROXY em
-    cada um dos 5 ambientes. Ao final, remove os usuarios Oracle e os
+    cada um dos 6 ambientes. Ao final, remove os usuarios Oracle e os
     artefatos criados no Vault (policy, login userpass, segredos).
 
 .NOTES
@@ -44,14 +44,17 @@ $createScript = Join-Path $PSScriptRoot '..\..\scripts\create-team-member.ps1'
 $engineerConn = Get-EngineerConnectString -EnvFile $EnvFile
 $VaultToken = Get-VaultToken -EnvFile $EnvFile
 
-$environments = 'TESTE', 'DEV', 'INFRA', 'HOMOLOG', 'PROD'
+$environments = 'TESTE_DEV', 'TESTE_INFRA', 'DEV', 'INFRA', 'HOMOLOG', 'PROD'
 # Matriz esperada - ver racional completo nos comentarios da secao 3 de
-# infra/oracle-init/09_environments.sql.
+# infra/oracle-init/09_environments.sql. TESTE_DEV/TESTE_INFRA sao a divisao
+# do antigo ambiente TESTE unico por time (ver item correspondente de
+# bugs-primeiro-teste.md).
 $matrizEsperada = [ordered]@{
-    'Estagiario'    = @{ TESTE = $true;  DEV = $false; INFRA = $false; HOMOLOG = $false; PROD = $false }
-    'Desenvolvedor' = @{ TESTE = $false; DEV = $true;  INFRA = $false; HOMOLOG = $true;  PROD = $false }
-    'Infra'         = @{ TESTE = $false; DEV = $false; INFRA = $true;  HOMOLOG = $true;  PROD = $false }
-    'HomologViewer' = @{ TESTE = $false; DEV = $false; INFRA = $false; HOMOLOG = $false; PROD = $false }
+    'EstagiarioDev'   = @{ TESTE_DEV = $true;  TESTE_INFRA = $false; DEV = $false; INFRA = $false; HOMOLOG = $false; PROD = $false }
+    'EstagiarioInfra' = @{ TESTE_DEV = $false; TESTE_INFRA = $true;  DEV = $false; INFRA = $false; HOMOLOG = $false; PROD = $false }
+    'Desenvolvedor'   = @{ TESTE_DEV = $false; TESTE_INFRA = $false; DEV = $true;  INFRA = $false; HOMOLOG = $true;  PROD = $false }
+    'Infra'           = @{ TESTE_DEV = $false; TESTE_INFRA = $false; DEV = $false; INFRA = $true;  HOMOLOG = $true;  PROD = $false }
+    'HomologViewer'   = @{ TESTE_DEV = $false; TESTE_INFRA = $false; DEV = $false; INFRA = $false; HOMOLOG = $false; PROD = $false }
 }
 
 $results = @()
@@ -59,7 +62,11 @@ $createdUsers = @()
 
 try {
     foreach ($profile in $matrizEsperada.Keys) {
-        $prefixo = "TST_$($profile.ToUpper().Substring(0, [Math]::Min(4, $profile.Length)))"
+        # CORRIGIDO: com EstagiarioDev/EstagiarioInfra, os primeiros 4
+        # caracteres ("ESTA") colidiam entre os dois - usa o nome completo do
+        # perfil (ainda cabe dentro do limite de 30 caracteres do username
+        # Oracle, mesmo com o sufixo aleatorio de New-ThrowawayUsername).
+        $prefixo = "TST_$($profile.ToUpper())"
         $username = New-ThrowawayUsername -Prefix $prefixo
         Write-Host "-> Criando usuario descartavel '$username' (perfil $profile) via create-team-member.ps1..."
         # Registrado ANTES de chamar o script: create-team-member.ps1 cria o

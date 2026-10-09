@@ -41,7 +41,7 @@ $usernamesMaliciosos = @(
 foreach ($nomeMalicioso in $usernamesMaliciosos) {
     $foiRejeitado = $false
     try {
-        & $createScript -Username $nomeMalicioso -Profile 'Estagiario' -EnvFile $EnvFile *> $null
+        & $createScript -Username $nomeMalicioso -Profile 'EstagiarioDev' -EnvFile $EnvFile *> $null
     } catch {
         $foiRejeitado = $true
     }
@@ -49,11 +49,15 @@ foreach ($nomeMalicioso in $usernamesMaliciosos) {
     $results += New-TestResult -Name "-Username '$rotulo' e rejeitado pelo parametro (nunca chega a montar SQL)" -Passed $foiRejeitado -Details $(if (-not $foiRejeitado) { 'nenhuma excecao foi lancada - o script tentou prosseguir' })
 }
 
-$perfisInvalidos = @('Administrador', 'Gerente', '')
-# NOTA: "estagiario" (minusculo) NAO entra nesta lista de proposito -
+$perfisInvalidos = @('Administrador', 'Gerente', '', 'Estagiario')
+# NOTA 1: "estagiariodev" (minusculo) NAO entra nesta lista de proposito -
 # ValidateSet do PowerShell e case-insensitive por padrao, entao e aceito como
-# uma grafia alternativa de "Estagiario" (perfil valido), nao uma falha de
+# uma grafia alternativa de "EstagiarioDev" (perfil valido), nao uma falha de
 # validacao - confirmado ao escrever este teste.
+# NOTA 2: "Estagiario" (sem sufixo) ENTRA nesta lista de proposito - era o
+# nome do perfil antes da divisao em EstagiarioDev/EstagiarioInfra (ver item
+# correspondente de bugs-primeiro-teste.md) e precisa continuar invalido,
+# nao "migrar" silenciosamente pra um dos dois novos perfis.
 foreach ($perfilInvalido in $perfisInvalidos) {
     $foiRejeitado = $false
     try {
@@ -69,7 +73,7 @@ foreach ($perfilInvalido in $perfisInvalidos) {
 $engineerConn = Get-EngineerConnectString -EnvFile $EnvFile
 $nomeValido = New-ThrowawayUsername -Prefix 'TST_VALIDO'
 try {
-    & $createScript -Username $nomeValido -Profile 'Estagiario' -EnvFile $EnvFile *> $null
+    & $createScript -Username $nomeValido -Profile 'EstagiarioDev' -EnvFile $EnvFile *> $null
     $outCheck = (Invoke-SqlPlus -ConnectString $engineerConn -Sql "SET PAGESIZE 0`nSET FEEDBACK OFF`nSELECT username FROM dba_users WHERE username = '$nomeValido';`nEXIT;`n") -join "`n"
     $results += New-TestResult -Name "(controle positivo) um -Username valido passa normalmente e cria o usuario" -Passed ($outCheck -match [regex]::Escape($nomeValido)) -Details $(if ($outCheck -notmatch [regex]::Escape($nomeValido)) { $outCheck })
 } finally {

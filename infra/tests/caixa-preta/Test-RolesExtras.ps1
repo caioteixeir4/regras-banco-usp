@@ -49,8 +49,8 @@ function Get-SenhaDefinitiva {
 }
 
 try {
-    & $createScript -Username $semRole -Profile 'Estagiario' -EnvFile $EnvFile *> $null
-    & $createScript -Username $comRole -Profile 'Estagiario' -Roles @('ROLE_KAWASHI_DEVELOPER') -EnvFile $EnvFile *> $null
+    & $createScript -Username $semRole -Profile 'EstagiarioDev' -EnvFile $EnvFile *> $null
+    & $createScript -Username $comRole -Profile 'EstagiarioDev' -Roles @('ROLE_KAWASHI_DEVELOPER') -EnvFile $EnvFile *> $null
 
     $senhaSemRole = Get-SenhaDefinitiva -Username $semRole
     $senhaComRole = Get-SenhaDefinitiva -Username $comRole
