@@ -35,6 +35,12 @@ Rode a partir de `infra/scripts/`:
   Vira o login do Oracle **e** o login pessoal do Vault.
 - **`-Profile`** (obrigatório): define automaticamente em quais ambientes a pessoa pode
   trabalhar — ver tabela abaixo. É a forma recomendada de conceder acesso.
+- **`-Servicos`**: opcional, liberação ADITIVA a schemas de serviço (`SEFAZ`,
+  `SIMPLES_NACIONAL`) em todo ambiente que o `-Profile` já alcança. **Por padrão (sem
+  `-Servicos`), a pessoa só enxerga as tabelas PADRÃO do ambiente dela** — nenhum serviço é
+  concedido sozinho. Dar serviço a todo mundo não tem problema nenhum nesse desenho, mas
+  precisa ser sempre explícito (um `-Servicos` por pessoa, nunca algo que o `-Profile` jogue
+  sozinho). Não se aplica a `HomologViewer` (não usa proxy em nenhum ambiente).
 - **`-Roles`**: opcional, só para exceções pontuais além do que o `-Profile` já cobre.
 
 ### Perfis disponíveis hoje
@@ -45,16 +51,17 @@ administrador (`ENGINEER_USER`) alcança Produção ou pode fazer `DROP TABLESPA
 
 | Perfil | Para quem | Ambientes liberados |
 |---|---|---|
-| `Estagiario` | Estagiários | **Teste** apenas |
+| `EstagiarioDev` | Estagiários do time de Desenvolvimento | **Teste-Dev** apenas |
+| `EstagiarioInfra` | Estagiários do time de Infraestrutura | **Teste-Infra** apenas |
 | `Desenvolvedor` | Desenvolvedores | **Desenvolvimento** + **Homologação** |
 | `Infra` | Time de infraestrutura | **Infra** + **Homologação**, mais `ROLE_KAWASHI_INFRA` |
 | `HomologViewer` | QA / negócio que só testa a tela | **Somente leitura (SELECT)** em Homologação |
 
-**Por que Estagiário não tem acesso a Homologação nem Desenvolvedor tem acesso a Teste?**
-A revisão do código dos estagiários acontece no Git (pull request), não no banco — o
-desenvolvedor aprova lendo o código, não os dados de Teste. E só quem tem acesso a
-Desenvolvimento ou Infra consegue escrever em Homologação, garantindo que nada chegue lá
-"do nada" sem passar por uma dessas duas etapas.
+**Por que Estagiário (Dev ou Infra) não tem acesso a Homologação nem Desenvolvedor/Infra tem
+acesso a Teste?** A revisão do trabalho dos estagiários acontece no Git (pull request), não no
+banco — quem já tem acesso a Desenvolvimento ou Infra aprova lendo o código, não os dados de
+Teste, e só então promove pra Homologação. Ver o diagrama completo em
+[`arquitetura.md`](arquitetura.md), seção 2.
 
 Exemplo com role extra pontual:
 
@@ -64,6 +71,22 @@ Exemplo com role extra pontual:
 
 Veja o racional completo (schemas, tablespaces, proxy authentication) em
 [`infra/oracle-init/09_environments.sql`](../oracle-init/09_environments.sql).
+
+## Dando acesso a um serviço depois (pessoa que já tem conta)
+
+`-Servicos` em `create-team-member.ps1` só funciona no momento da **criação** — rodar o script
+de novo pra um `-Username` que já existe falha com `ORA-01920` antes de chegar em `-Servicos`.
+Pro caso comum de alguém que já tem conta (ex: um `Desenvolvedor` sem nenhum serviço) entrar
+depois no time da SEFAZ, use:
+
+```powershell
+./grant-service-access.ps1 -Username NOME_SOBRENOME -Servicos SEFAZ
+```
+
+Script: [`infra/scripts/grant-service-access.ps1`](../scripts/grant-service-access.ps1). Ele
+descobre sozinho (consultando `DBA_PROXIES`, não perguntando de volta) em quais ambientes a
+pessoa já tem proxy, e concede o serviço pedido em todos eles — não muda senha, não mexe no
+Vault, é idempotente (rodar de novo com o mesmo serviço não dá erro).
 
 ## O que o script faz por trás (resumo)
 
@@ -96,7 +119,9 @@ tentar logar pela primeira vez, senão o próprio Oracle vai recusar a conexão 
 - **Não rode o script duas vezes para o mesmo usuário** — o Oracle vai recusar com
   `ORA-01920` (usuário já existe). Se precisar recriar do zero, tranque/remova o usuário
   antigo primeiro.
-- Para **trocar as roles de alguém depois de criado**, use `GRANT`/`REVOKE` diretamente —
-  o script cobre apenas a criação inicial, não edição de permissões existentes.
+- Para **dar acesso a um serviço depois de criado**, use
+  [`grant-service-access.ps1`](../scripts/grant-service-access.ps1) (seção acima) — não `GRANT`
+  manual. Para **trocar roles** de alguém depois de criado, aí sim use `GRANT`/`REVOKE`
+  diretamente — nenhum script cobre isso ainda.
 - Não cole a saída do terminal (que contém a senha temporária do Vault) em lugares
   persistentes ou públicos — trate como qualquer credencial sensível.

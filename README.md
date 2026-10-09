@@ -95,6 +95,11 @@ Além do perfil, `-Servicos` concede acesso ADITIVO a schemas de serviço espec�
 Detalhes e racional completo: [`infra/oracle-init/09_environments.sql`](infra/oracle-init/09_environments.sql)
 e [`infra/docs/criar-novo-usuario.md`](infra/docs/criar-novo-usuario.md).
 
+Por padrão (sem `-Servicos`), qualquer perfil enxerga só as tabelas padrão do(s) ambiente(s) dele
+— serviço adicional é sempre uma concessão explícita, nunca automática. Pra dar um serviço a
+alguém que já tem conta (sem recriar o usuário do zero), use
+[`infra/scripts/grant-service-access.ps1`](infra/scripts/grant-service-access.ps1).
+
 ### Onboarding sem senha passando por chat
 [`infra/scripts/create-team-member.ps1`](infra/scripts/create-team-member.ps1) cria o usuário
 Oracle, gera uma senha aleatória que só serve pro primeiro login, e guarda essa senha no

@@ -7,7 +7,7 @@ teria pego — só rodando de verdade. Este documento registra cada um: o sintom
 e a correção, para servir de referência caso algo parecido apareça de novo (ou para explicar,
 numa apresentação/defesa, que o projeto foi validado na prática, não só no papel).
 
-Mais problemas (itens 8 a 18 abaixo) apareceram depois, em rodadas seguintes de testes —
+Mais problemas (itens 8 a 19 abaixo) apareceram depois, em rodadas seguintes de testes —
 desta vez escrevendo e expandindo a suíte automatizada em `infra/tests/` (ver
 `infra/tests/README.md`) em vez de testar na mão. Os itens 11 e 12 são os mais graves em termos de
 auditoria (a trilha de segurança própria nunca tinha gravado uma única linha de verdade, desde o
@@ -489,6 +489,30 @@ acidente): confirma que as FKs serviço→padrão conhecidas realmente existem n
 (`ORGANIZACOES`, `LOGIN`, `ADMINISTRACAO` — ver `infra/oracle-init/12_exemplo_dominio_kawashi_core.sql`
 e `arquitetura.md`), pedidos explicitamente como mais material de referência/teste do padrão
 padrão+serviço, sem aprofundar o desenho de nenhum deles.
+
+## 19. (achado de metodologia, não um bug) `DBA_PROXIES` grava CLIENT/PROXY ao contrário do que o nome sugere
+
+**Contexto:** implementando `infra/scripts/grant-service-access.ps1` (concede serviço a um
+usuário que já existe, sem recriar a conta - pedido do usuário: "por padrão os perfis devem ter
+acesso só a tabelas padrão, o serviço adicional deve ser posto separadamente ou incluído depois
+em cada usuário"), o script precisa descobrir em quais ambientes um usuário já tem proxy,
+consultando `DBA_PROXIES` em vez de perguntar o `-Profile` de volta (isso não fica gravado em
+lugar nenhum do Oracle).
+
+**Achado testando ao vivo:** `ALTER USER KAWASHI_ENV_DEV GRANT CONNECT THROUGH JOAO;` grava, em
+`DBA_PROXIES`, `CLIENT = 'KAWASHI_ENV_DEV'` e `PROXY = 'JOAO'` — o **inverso** do que os nomes
+das colunas sugerem à primeira vista (seria natural supor `CLIENT` = a pessoa que conecta,
+`PROXY` = o schema). Uma consulta escrita com a intuição errada (`SELECT client FROM dba_proxies
+WHERE client = 'JOAO'`) sempre retorna "no rows selected", mesmo com o proxy funcionando
+perfeitamente na prática — silenciosamente parecendo que o usuário não tem acesso a nada.
+
+**A consulta certa**, confirmada ao vivo criando um usuário de teste e inspecionando
+`DBA_PROXIES` linha a linha: `SELECT client FROM dba_proxies WHERE proxy = 'JOAO'` — devolve os
+ambientes (`KAWASHI_ENV_DEV`, `KAWASHI_ENV_HOMOLOG`, etc.) que `JOAO` já alcança.
+
+**Não é bug de código** (nenhum script deste projeto usava `DBA_PROXIES` antes) — fica
+registrado como nota de metodologia, pro caso de alguém escrever uma consulta nova contra essa
+view no futuro e cair na mesma armadilha.
 
 ## Validação final
 

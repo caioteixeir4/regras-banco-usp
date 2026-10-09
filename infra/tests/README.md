@@ -43,7 +43,7 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (36 arquivos, 243 casos):
+Arquivos de teste atuais, por categoria (37 arquivos, 250 casos):
 
 - `unitarios/`: `Test-PasswordVerifyFunction.ps1`
 - `caixa-branca/`: `Test-ProfileEHardeningInternals.ps1`, `Test-HomologAutograntTrigger.ps1`,
@@ -60,7 +60,7 @@ Arquivos de teste atuais, por categoria (36 arquivos, 243 casos):
   `Test-ReusoSenhaImediatoBloqueado.ps1`, `Test-CriacaoConcorrente.ps1`,
   `Test-CriacaoObjetosBloqueadaPorPerfil.ps1`, `Test-RolesPerigosasBloqueadas.ps1`,
   `Test-DropPluggableDatabaseBloqueado.ps1`, `Test-ControleColetivoDentroDoAmbiente.ps1`,
-  `Test-SegmentacaoPorServico.ps1`
+  `Test-SegmentacaoPorServico.ps1`, `Test-ConcessaoServicoUsuarioExistente.ps1`
 - `outros/`: `Test-OnboardingEndToEnd.ps1`, `Test-ConexaoAplicacaoSpring.ps1`,
   `Test-LimiteSessoesAplicacao.ps1`
 
@@ -129,6 +129,26 @@ mais referência/material de teste, sem aprofundar o desenho de nenhum deles.
   funciona pra qualquer serviço futuro, sem listar nomes. Inclui controles positivos (SEFAZ,
   ADMINISTRACAO e LOGIN apontando no sentido certo) pra provar que a consulta não passaria vazia
   por acidente - ver item 18 de `bugs-primeiro-teste.md` (achado preventivo, não um bug).
+
+### Rodada "conceder serviço depois, pra quem já tem conta"
+
+Pedido do usuário: por padrão um perfil só deve enxergar as tabelas padrão; serviço adicional
+pode ser dado a qualquer perfil sem problema, mas sempre separado e explícito - inclusive
+**depois** que a conta já existe, não só na criação. `create-team-member.ps1 -Servicos` só
+funciona no momento da criação (rodar de novo com o mesmo `-Username` falha com `ORA-01920`) -
+criado `infra/scripts/grant-service-access.ps1` pra cobrir o caso de alguém que já tem conta.
+
+- `Test-ConcessaoServicoUsuarioExistente.ps1` (novo): confirma que um usuário criado sem
+  `-Servicos` não alcança o schema de serviço; que `grant-service-access.ps1` concede acesso
+  de verdade (INSERT + JOIN) sem mudar senha nem mexer no Vault; que a liberação continua por
+  serviço (SIMPLES_NACIONAL continua bloqueado); que rodar o script de novo com o mesmo serviço
+  é idempotente; que um perfil com mais de um ambiente (Infra) recebe o serviço em TODOS eles;
+  e os dois erros esperados (usuário inexistente, perfil sem nenhum ambiente via proxy).
+- Achado ao vivo (não um bug, mas uma pegadinha real de metodologia): as colunas de
+  `DBA_PROXIES` são o inverso do que o nome sugere - `ALTER USER KAWASHI_ENV_DEV GRANT CONNECT
+  THROUGH JOAO` grava `CLIENT = KAWASHI_ENV_DEV` e `PROXY = JOAO`, não o contrário. A consulta
+  certa pra "em quais ambientes JOAO já entra" é `SELECT client FROM dba_proxies WHERE proxy =
+  'JOAO'` - ver item 19 de `bugs-primeiro-teste.md`.
 
 ### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 

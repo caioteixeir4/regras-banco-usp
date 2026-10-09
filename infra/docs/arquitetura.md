@@ -83,6 +83,8 @@ flowchart LR
     Engenheiro -- "escreve manualmente, 1x/mês,
     só o que foi validado" --> Prod
 
+    TesteDev -. "promoção (PR)" .-> Dev
+    TesteInfra -. "promoção (PR)" .-> InfraEnv
     Dev -.-> Homolog
     InfraEnv -.-> Homolog
     Homolog -. "promoção mensal
@@ -92,9 +94,16 @@ flowchart LR
 **O que prestar atenção aqui:**
 - **Ninguém** chega em Produção por acesso direto — nem Desenvolvedor, nem Infra. Só o
   `ENGINEER_USER` (privilégio `DBA`) escreve lá, manualmente, uma vez por mês.
-- Nenhum Estagiário (Dev ou Infra) tem seta chegando em Homologação — a revisão do trabalho deles
-  acontece no Git (pull request), não no banco. Só quem já tem acesso a Desenvolvimento ou
-  Infra consegue promover algo pra Homologação.
+- As setas pontilhadas (`Teste_Dev → Dev`, `Teste_Infra → Infra`, `Dev/Infra → Homologação`,
+  `Homologação → Produção`) são o **ciclo de vida** de uma tabela/mudança, não um mecanismo
+  automático do banco — nenhuma delas copia nada sozinha entre schemas. `Teste_* → Dev/Infra`
+  acontece por commit + pull request revisado pelo supervisor; o resto, por quem já tem acesso
+  aos dois ambientes decidir promover manualmente. Sem essas setas o desenho dava a entender,
+  por engano, que Teste é um ambiente isolado e solto - ele existe justamente para alimentar
+  Dev/Infra.
+- Nenhum Estagiário (Dev ou Infra) tem **proxy** chegando em Desenvolvimento, Infra ou
+  Homologação - só a seta pontilhada de promoção acima, que é trabalho humano (Git), não acesso
+  de banco.
 - QA/HomologViewer é o único perfil que **não usa proxy** — ele lê Homologação através de uma
   role de `SELECT`, porque não deveria ter poder de escrita/DDL ali (proxy daria isso de
   brinde, então evitamos).
