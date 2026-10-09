@@ -43,14 +43,15 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (35 arquivos, 238 casos):
+Arquivos de teste atuais, por categoria (36 arquivos, 243 casos):
 
 - `unitarios/`: `Test-PasswordVerifyFunction.ps1`
 - `caixa-branca/`: `Test-ProfileEHardeningInternals.ps1`, `Test-HomologAutograntTrigger.ps1`,
   `Test-RolesPrivilegiosInternos.ps1`, `Test-SpringAppUserHardeningInternals.ps1`,
   `Test-TrilhaSegurancaPropria.ps1`, `Test-ObjetosInvalidosEJobsSaudaveis.ps1`,
   `Test-BlacklistFerramentasDados.ps1`, `Test-TrilhaSegurancaFailover.ps1`,
-  `Test-ConsistenciaLoginRepetido.ps1`, `Test-InventarioDeSeguranca.ps1`
+  `Test-ConsistenciaLoginRepetido.ps1`, `Test-InventarioDeSeguranca.ps1`,
+  `Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`
 - `caixa-preta/`: `Test-BloqueioPorTentativasInvalidas.ps1`, `Test-MatrizAcessoPorPerfil.ps1`,
   `Test-ConexaoNovoUsuario.ps1`, `Test-UsuarioDuplicado.ps1`, `Test-PermissoesCrudPorAmbiente.ps1`,
   `Test-PermissoesHomologViewerSomenteLeitura.ps1`, `Test-BloqueioOsUserInseguro.ps1`,
@@ -113,6 +114,21 @@ liberação aditiva via `-Servicos` - ver `09_environments.sql` seção 2.1,
 - Achado real no caminho (item 17 de `bugs-primeiro-teste.md`): `GRANT REFERENCES` só habilita
   criar a FK, não dá nenhuma permissão de leitura - o primeiro `JOIN` entre serviço e padrão
   falhava com `ORA-41900: missing READ privilege` até adicionar `GRANT SELECT` explícito.
+
+### Rodada "mais exemplos de domínio + invariante de arquitetura"
+
+Pergunta do usuário que motivou esta rodada: "não é interessante fazer testes? tipo para garantir
+que nas tabelas padrões nunca tenha uma foreing key que está em um esquema lá na frente" - mais
+três schemas de serviço de exemplo (`ORGANIZACOES`, `LOGIN`, `ADMINISTRACAO`, ver
+`12_exemplo_dominio_kawashi_core.sql` e `arquitetura.md` seção 2.2), pedidos explicitamente como
+mais referência/material de teste, sem aprofundar o desenho de nenhum deles.
+
+- `Test-InvarianteFkPadraoNuncaReferenciaServico.ps1` (novo, caixa-branca): consulta genérica a
+  `DBA_CONSTRAINTS` que confirma, nos 6 ambientes, que nenhuma tabela padrão tem FK apontando pra
+  dentro de um schema de serviço (o contrário do padrão servico→padrão já estabelecido) -
+  funciona pra qualquer serviço futuro, sem listar nomes. Inclui controles positivos (SEFAZ,
+  ADMINISTRACAO e LOGIN apontando no sentido certo) pra provar que a consulta não passaria vazia
+  por acidente - ver item 18 de `bugs-primeiro-teste.md` (achado preventivo, não um bug).
 
 ### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 

@@ -31,7 +31,7 @@ em [`infra/docs/bugs-primeiro-teste.md`](infra/docs/bugs-primeiro-teste.md).
 
 ### Banco de dados e hardening (bootstrap automático)
 Tudo abaixo roda sozinho na primeira inicialização do container Oracle, via os scripts
-numerados em [`infra/oracle-init/`](infra/oracle-init/) (`01` a `10` — os comentários de cada
+numerados em [`infra/oracle-init/`](infra/oracle-init/) (`01` a `12` — os comentários de cada
 arquivo explicam o "porquê" de cada peça, não só o "o quê"):
 
 - Tablespaces separadas para dados de negócio, logs de auditoria e cada ambiente de ciclo
@@ -69,6 +69,12 @@ arquivo explicam o "porquê" de cada peça, não só o "o quê"):
 - Segmentação por serviço DENTRO de cada ambiente: tabelas padrão compartilhadas (ex: `CLIENTE`)
   mais schemas de serviço (ex: `SEFAZ`, `SIMPLES_NACIONAL`) com FK de volta pro padrão, visíveis
   só a quem tem liberação explícita — `09` (schemas/grants) e `11` (exemplo ilustrativo).
+- Mais exemplos ilustrativos do mesmo padrão padrão+serviço, pra ter mais referência e mais
+  material de teste: `ORGANIZACOES` (tenants do sistema Kawashi), `LOGIN` (autenticação,
+  usuário pertencendo a mais de uma organização, trilha de login/troca de senha) e
+  `ADMINISTRACAO` (faturamento dos clientes da própria Kawashi) — `12`. Um teste de regressão
+  garante que a FK entre padrão e serviço só existe no sentido serviço→padrão, nunca o
+  contrário — [`Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`](infra/tests/caixa-branca/Test-InvarianteFkPadraoNuncaReferenciaServico.ps1).
 
 ### RBAC — perfis de acesso do time
 Perfis prontos que já definem automaticamente em qual ambiente cada pessoa pode
@@ -123,10 +129,12 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
       authentication, incluindo a divisão TESTE em TESTE_DEV/TESTE_INFRA por equipe). Isolamento
       **físico** (PDBs ou containers/instâncias separadas) ainda pendente — depende da
       arquitetura de hospedagem (local vs AWS) ser decidida.
-- [~] Segmentação por serviço: schemas padrão + serviço (SEFAZ/SIMPLES_NACIONAL de exemplo) com
-      FK e GRANT SELECT entre eles, liberação aditiva via `-Servicos`. Falta: sincronização
-      automática de estrutura entre ambientes quando uma tabela de serviço é promovida (migração
-      de schema, tipo Flyway/Liquibase) e acesso restrito/temporário a Homologação e Produção.
+- [~] Segmentação por serviço: schemas padrão + serviço (SEFAZ/SIMPLES_NACIONAL, ORGANIZACOES,
+      LOGIN e ADMINISTRACAO de exemplo) com FK e GRANT SELECT entre eles, liberação aditiva via
+      `-Servicos`, e teste de regressão garantindo que a FK nunca aponta no sentido errado
+      (padrão→serviço). Falta: sincronização automática de estrutura entre ambientes quando uma
+      tabela de serviço é promovida (migração de schema, tipo Flyway/Liquibase) e acesso
+      restrito/temporário a Homologação e Produção.
 - [ ] TDE (Transparent Data Encryption): Configurar criptografia em repouso no nível de Tablespace para o "balde" do Java.
 - [ ] Data Redaction: Configurar máscaras em tempo real (ex: ocultar dígitos de CPF/Cartão) baseadas na Role do usuário.
 - [ ] VPD (Virtual Private Database): Criar políticas para que a equipe de infra nunca veja linhas de dados de documentos de negócio.

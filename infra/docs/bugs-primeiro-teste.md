@@ -7,13 +7,15 @@ teria pego — só rodando de verdade. Este documento registra cada um: o sintom
 e a correção, para servir de referência caso algo parecido apareça de novo (ou para explicar,
 numa apresentação/defesa, que o projeto foi validado na prática, não só no papel).
 
-Mais problemas (itens 8 a 17 abaixo) apareceram depois, em rodadas seguintes de testes —
+Mais problemas (itens 8 a 18 abaixo) apareceram depois, em rodadas seguintes de testes —
 desta vez escrevendo e expandindo a suíte automatizada em `infra/tests/` (ver
 `infra/tests/README.md`) em vez de testar na mão. Os itens 11 e 12 são os mais graves em termos de
 auditoria (a trilha de segurança própria nunca tinha gravado uma única linha de verdade, desde o
 primeiro boot); o item 15 é o mais grave em termos de controle de acesso (o próprio script de
 onboarding permitia conceder `DBA` completo a qualquer conta, sem nenhuma resistência); o item 17
-apareceu implementando a segmentação por serviço descrita em `infra/tests/README.md` e no item 16.
+apareceu implementando a segmentação por serviço descrita em `infra/tests/README.md` e no item 16;
+o item 18 é um teste preventivo (não um bug encontrado), escrito a pedido do usuário para garantir
+que o problema do item 17 nunca aconteça no sentido inverso (padrão referenciando serviço).
 
 ## 1. `SEC_MAX_FAILED_LOGIN_ATTEMPTS` setado no PDB errado
 
@@ -459,6 +461,34 @@ válida e funcional sem conseguir fazer `SELECT` do outro lado dela.
 schema de serviço recebe `GRANT SELECT` em **todas** as tabelas padrão do mesmo ambiente (não só
 na que tem FK direta) — a ideia sendo que quem tem acesso a um serviço enxerga o padrão inteiro
 daquele ambiente, não só o pedaço que uma FK específica toca.
+
+## 18. (achado preventivo, não um bug) Faltava um teste de regressão pra invariante "padrão nunca referencia serviço"
+
+**Pergunta que motivou a criação deste teste:** "não é interessante fazer testes? tipo para
+garantir que nas tabelas padrões nunca tenha uma foreing key que está em um esquema lá na
+frente" — ou seja, nada até agora impediria (nem avisaria) que alguém, por engano, criasse uma FK
+no sentido contrário ao combinado na arquitetura (ver seção 2.1 de `arquitetura.md`): um schema
+PADRÃO (`KAWASHI_ENV_DEV`, por exemplo) referenciando uma tabela dentro de um schema de SERVIÇO
+(`KAWASHI_ENV_DEV_SEFAZ`). Isso quebraria a promessa central do desenho — o padrão ser reutilizável
+por qualquer serviço novo sem precisar saber que aquele serviço existe.
+
+**O que foi criado** (`infra/tests/caixa-branca/Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`):
+uma consulta a `DBA_CONSTRAINTS` que procura, nos 6 schemas de ambiente "puros"
+(`KAWASHI_ENV_TESTE_DEV`, `_TESTE_INFRA`, `_DEV`, `_INFRA`, `_HOMOLOG`, `_PROD`), qualquer foreign
+key cujo lado referenciado seja um schema `KAWASHI_ENV_%` que **não** seja um desses 6 — ou seja,
+qualquer schema de serviço, presente ou futuro, sem precisar listar nomes um por um. Hoje essa
+consulta não encontra nada (correto); se algum dia alguém adicionar uma FK no sentido errado, a
+suíte automatizada passa a falhar nela.
+
+**Controles positivos incluídos** (pra provar que a consulta não "passa" só por estar vazia por
+acidente): confirma que as FKs serviço→padrão conhecidas realmente existem no sentido certo —
+`KAWASHI_ENV_DEV_SEFAZ` → `KAWASHI_ENV_DEV`, `KAWASHI_ENV_DEV_ADMINISTRACAO` → `KAWASHI_ENV_DEV`, e
+`KAWASHI_ENV_DEV_LOGIN` → `KAWASHI_ENV_DEV_ORGANIZACOES`.
+
+**Contexto:** escrito na mesma rodada em que três novos schemas de exemplo foram adicionados
+(`ORGANIZACOES`, `LOGIN`, `ADMINISTRACAO` — ver `infra/oracle-init/12_exemplo_dominio_kawashi_core.sql`
+e `arquitetura.md`), pedidos explicitamente como mais material de referência/teste do padrão
+padrão+serviço, sem aprofundar o desenho de nenhum deles.
 
 ## Validação final
 
