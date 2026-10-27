@@ -3,7 +3,7 @@
 .SYNOPSIS
     Teste de CAIXA-PRETA: confirma que a segmentacao por servico (padrao +
     SEFAZ + SIMPLES_NACIONAL, ver secao 2.1 de infra/oracle-init/09_environments.sql
-    e infra/oracle-init/11_exemplo_dominio_negocio.sql) funciona de ponta a
+    e a fixture infra/oracle-init/11_fixture_contrato_segmentacao.sql) funciona de ponta a
     ponta: sem -Servicos ninguem enxerga o schema de servico; com -Servicos
     SEFAZ a pessoa consegue ler/escrever no servico E fazer JOIN com a tabela
     padrao via FK; e a liberacao e ESTRITAMENTE por servico, nao "tudo ou

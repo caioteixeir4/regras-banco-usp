@@ -78,7 +78,8 @@ seu perfil:
 
 | Perfil | Nome do schema pra usar no proxy |
 |---|---|
-| Estagiário | `KAWASHI_ENV_TESTE` |
+| EstagiarioDev | `KAWASHI_ENV_TESTE_DEV` |
+| EstagiarioInfra | `KAWASHI_ENV_TESTE_INFRA` |
 | Desenvolvedor | `KAWASHI_ENV_DEV` (e `KAWASHI_ENV_HOMOLOG` pra promover código) |
 | Infra | `KAWASHI_ENV_INFRA` (e `KAWASHI_ENV_HOMOLOG` pra promover código) |
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Verifica se o bootstrap do banco (oracle-init/01 a 09) subiu sem erros silenciosos.
+    Verifica se o bootstrap do banco (oracle-init/01 a 11) subiu sem erros silenciosos.
 
 .DESCRIPTION
     Muito PL/SQL deste projeto nunca roda "na hora que voce ve o erro" - triggers, procedures

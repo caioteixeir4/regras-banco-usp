@@ -24,7 +24,7 @@ services:
       # Qualquer arquivo .sql em ./oracle-init será executado no primeiro boot.
       - ./oracle-init:/container-entrypoint-initdb.d
     # O Oracle demora de 1 a 3+ minutos pra ficar pronto no primeiro boot (criando o banco,
-    # depois rodando os 9 scripts de oracle-init). Sem isso, "docker compose up" parece
+    # depois rodando os 11 scripts de oracle-init). Sem isso, "docker compose up" parece
     # terminado mas o banco ainda nao aceita conexao - o healthcheck.sh ja vem pronto na
     # imagem gvenzl/oracle-free exatamente pra sinalizar esse estado.
     healthcheck:

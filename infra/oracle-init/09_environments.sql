@@ -90,11 +90,13 @@ GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDU
 -- 2.1 SCHEMAS DE SERVICO - segmentacao por servico DENTRO de cada ambiente
 -- #########################################################
 -- NOVO: o banco de dados de negocio da Kawashi vai ter TABELAS PADRAO
--- compartilhadas entre servicos (CLIENTE, ENDERECO, EMPRESA, FILIAL, CONTATO,
--- SOCIO - dados cadastrais basicos que qualquer servico usa) e TABELAS
+-- compartilhadas entre servicos (ex: CLIENTE - dados cadastrais basicos que
+-- qualquer servico usa; o conjunto completo, com ENDERECO, EMPRESA, FILIAL,
+-- CONTATO, SOCIO etc., vive no repositorio de tabelas, nao aqui) e TABELAS
 -- ESPECIFICAS de cada servico fiscal (ex: SEFAZ, SIMPLES_NACIONAL), que
 -- referenciam as tabelas padrao via FK mas nao devem ser visiveis a quem nao
--- tem liberacao para aquele servico especifico.
+-- tem liberacao para aquele servico especifico. As REGRAS dessa segmentacao
+-- (schemas, grants, proxy) sao deste repositorio; as tabelas em si, nao.
 --
 -- "Padrao" NAO ganha schema novo - continua sendo o proprio schema de
 -- ambiente (KAWASHI_ENV_DEV, etc.) que ja existe, decisao deliberada pra nao
@@ -136,8 +138,8 @@ GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDU
 -- NOTA: o GRANT REFERENCES (necessario pra uma tabela de servico ter FK pra
 -- uma tabela padrao do mesmo ambiente) nao entra aqui - so pode ser concedido
 -- depois que a tabela padrao referenciada EXISTIR. Ver
--- infra/oracle-init/11_exemplo_dominio_negocio.sql, que cria as tabelas de
--- exemplo e os GRANTs de REFERENCES juntos.
+-- infra/oracle-init/11_fixture_contrato_segmentacao.sql, que cria a fixture
+-- minima (CLIENTE + SEFAZ.CONFIGURACAO_FISCAL) e os GRANTs de REFERENCES juntos.
 
 -- #########################################################
 -- 3. QUEM PODE ENTRAR EM CADA AMBIENTE (PROXY AUTHENTICATION)

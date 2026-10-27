@@ -13,7 +13,7 @@ numa porta do seu computador:
 flowchart TB
     subgraph Maquina["Sua máquina (local hoje — AWS no futuro)"]
         InitScripts["📜 infra/oracle-init/*.sql
-        (01 a 09 — rodam só no 1º boot)"]
+        (01 a 11 — rodam só no 1º boot)"]
 
         subgraph Rede["kawashi-net (rede Docker privada)"]
             Oracle["🗄️ kawashi-oracle
@@ -123,9 +123,9 @@ um dos 6 ambientes:
 flowchart TB
     subgraph DEV["Ambiente DEV"]
         Padrao["📋 KAWASHI_ENV_DEV (padrão)
-        CLIENTE, ENDERECO, EMPRESA, FILIAL, CONTATO, SOCIO"]
+        CLIENTE (fixture mínima)"]
         Sefaz["🗂️ KAWASHI_ENV_DEV_SEFAZ
-        CONFIGURACAO_FISCAL"]
+        CONFIGURACAO_FISCAL (fixture mínima)"]
         Simples["🗂️ KAWASHI_ENV_DEV_SIMPLES_NACIONAL
         (vazio - exemplo ainda não criado)"]
     end
@@ -152,50 +152,61 @@ flowchart TB
   HOMOLOG → PROD) - por isso as tabelas de exemplo hoje só existem em `TESTE_DEV`/`DEV`, não nos
   outros 4 ambientes (que já têm os schemas de serviço criados, vazios, prontos pra isso).
 
-## 2.2 Mais exemplos ilustrativos do mesmo padrão (ORGANIZACOES, LOGIN, ADMINISTRACAO)
+## 2.2 Regras neste repositório, tabelas em outro
 
-Além de SEFAZ/SIMPLES_NACIONAL, três outros schemas de serviço foram criados só como mais
-referência e material de teste do mesmo padrão padrão+serviço — sem aprofundar o desenho de
-nenhum deles (decisão explícita: "não vamos nos aprofundar em nenhum esquema, só por eles pra
-gente ir usando como exemplos e testes"). Também em `TESTE_DEV`/`DEV` apenas, mesma lógica da
-seção 2.1:
+Este repositório guarda as **regras** do banco: hardening, ambientes, RBAC, auditoria,
+onboarding, Vault e a suíte de testes. As **tabelas de negócio** (endereço, empresa, filial,
+contato, sócio, e os schemas de plataforma como organizações/login/administração) e a API do
+banco vão viver em um repositório separado, ainda a ser criado. Motivo: ciclos de vida
+diferentes (regra muda pouco e com revisão pesada; tabela muda toda semana) e donos diferentes
+(Infra/SecOps é dono da regra, Dev é dono da tabela).
 
 ```mermaid
-flowchart TB
-    subgraph DEV["Ambiente DEV"]
-        Padrao["📋 KAWASHI_ENV_DEV (padrão)
-        CLIENTE, ENDERECO, EMPRESA, FILIAL, CONTATO, SOCIO"]
-        Org["🏢 KAWASHI_ENV_DEV_ORGANIZACOES
-        EMPRESA, FILIAL, LOG_ALTERACAO
-        (tenants do sistema Kawashi)"]
-        Login["🔐 KAWASHI_ENV_DEV_LOGIN
-        USUARIO, USUARIO_EMPRESA,
-        LOG_LOGIN, LOG_TROCA_SENHA"]
-        Adm["💰 KAWASHI_ENV_DEV_ADMINISTRACAO
-        FATURA, PAGAMENTO"]
+flowchart LR
+    subgraph Regras["Este repositório — regras do banco"]
+        R1["🔒 Hardening, auditoria e trilha de segurança
+        (4 tabelas de controle: IPs, ferramentas, log, fallback)"]
+        R2["🧭 Ambientes, schemas de serviço, RBAC e proxy
+        (quem alcança o quê)"]
+        R3["🧪 Testes de contrato
+        + fixture mínima (CLIENTE e SEFAZ.CONFIGURACAO_FISCAL)"]
     end
 
-    Login -- "FK: EMPRESA_ID → EMPRESA.ID" --> Org
-    Adm -- "FK: CLIENTE_ID → CLIENTE.ID" --> Padrao
+    subgraph Tabelas["Repositório de tabelas (a criar)"]
+        T1["📋 Tabelas padrão
+        CLIENTE, ENDERECO, EMPRESA, FILIAL, CONTATO, SOCIO"]
+        T2["🗂️ Tabelas de serviço e de plataforma
+        SEFAZ, SIMPLES_NACIONAL, ORGANIZACOES, LOGIN, ADMINISTRACAO"]
+        T3["🔌 API do banco"]
+    end
+
+    Tabelas -- "precisa passar nos" --> R3
+    Tabelas -- "roda dentro dos schemas de" --> R2
 ```
 
 **O que prestar atenção aqui:**
-- `ORGANIZACOES.EMPRESA` (os *tenants* que usam o sistema Kawashi) **não é a mesma coisa** que
-  `EMPRESA` do schema padrão (que representa uma empresa do CLIENTE fiscal, usada por
-  SEFAZ/SIMPLES_NACIONAL) — são dois conceitos diferentes, em schemas diferentes, sem nenhuma
-  relação entre si. Só compartilham o nome por coincidência de domínio.
-- `LOGIN` modela uma pessoa podendo pertencer a mais de uma organização com um papel diferente
-  em cada uma (`USUARIO_EMPRESA`, N:N) — ela escolhe com qual organização quer logar depois de
-  validar email+senha. `LOG_LOGIN`/`LOG_TROCA_SENHA` guardam só o histórico; a regra em si (2FA,
-  forçar troca a cada 3 meses) é lógica de aplicação, fora do escopo de uma tabela de exemplo —
-  mesma filosofia do projeto inteiro de nunca guardar segredo de verdade em texto puro no banco.
-- `ADMINISTRACAO` referencia o `CLIENTE` do schema padrão — o **mesmo** `CLIENTE` que SEFAZ já
-  referencia. Prova concreta de que o padrão é reutilizável por um serviço novo, inclusive um que
-  não é fiscal, sem precisar mudar nada nele.
-- Nenhum `-Profile`/`-Servicos` de `create-team-member.ps1` concede acesso a estes 3 schemas
-  ainda — por enquanto existem só como exemplo e material de teste de arquitetura (ver
-  `infra/tests/caixa-branca/Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`, que confirma que
-  a FK entre padrão e serviço nunca existe no sentido contrário, em nenhum dos 6 ambientes).
+- Só duas coisas com tabela ficam aqui: as **4 tabelas de controle** de segurança
+  (`KAWASHI_ALLOWED_IPS`, `KAWASHI_FORBIDDEN_TOOLS`, `KAWASHI_SECURITY_LOG` e o fallback, em
+  `03`) e a **fixture mínima** do `11` (`CLIENTE` + `SEFAZ.CONFIGURACAO_FISCAL`, só em
+  `TESTE_DEV`/`DEV`), que existe pra os testes terem o que exercitar.
+- Criar uma conta de banco (pessoa ou API) **não depende de nenhuma tabela de negócio**: a
+  identidade vive no dicionário do Oracle (`DBA_USERS`, `DBA_PROXIES`) e a senha no Vault. As
+  únicas tabelas tocadas no caminho são as 4 de controle de segurança: os triggers de auditoria
+  gravam em `KAWASHI_SECURITY_LOG` e o de logon lê `KAWASHI_ALLOWED_IPS`/`KAWASHI_FORBIDDEN_TOOLS`.
+  `LOGIN.USUARIO`, no
+  repositório de tabelas, será o usuário do **site** (cliente da Kawashi) — outro conceito, que
+  nunca é uma conta de banco.
+- O invariante "padrão nunca referencia serviço" (seção 2.1) é um **contrato**: o teste mora
+  aqui e o repositório de tabelas precisa passar nele.
+- **Nada se perdeu.** A tag git `dominio-completo-pre-separacao` (commit `cadb773`) guarda o
+  repositório inteiro
+  como estava antes da separação — os dois SQL de domínio originais, o teste de invariante com
+  5 casos, as seções 2.1/2.2 deste documento com os diagramas de `ORGANIZACOES`/`LOGIN`/
+  `ADMINISTRACAO`. Para ler qualquer arquivo de lá:
+  `git show dominio-completo-pre-separacao:infra/oracle-init/12_exemplo_dominio_kawashi_core.sql`.
+- **Em aberto** (ver Technical Debts no README): como o repositório de tabelas é aplicado sobre
+  este (regras sobem primeiro, tabelas depois), e onde mora a regra de "serviço lê todas as
+  tabelas padrão", que hoje roda uma vez só no primeiro boot.
 
 ## 3. Como uma pessoa nova recebe acesso (onboarding via Vault)
 
@@ -242,9 +253,7 @@ sequenceDiagram
 - [`onboarding-novo-membro.md`](onboarding-novo-membro.md) — guia de quem está recebendo acesso.
 - [`../oracle-init/09_environments.sql`](../oracle-init/09_environments.sql) — implementação
   dos ambientes/schemas e o racional completo de cada decisão.
-- [`../oracle-init/11_exemplo_dominio_negocio.sql`](../oracle-init/11_exemplo_dominio_negocio.sql)
-  — exemplo ilustrativo do padrão tabelas padrão + schema de serviço (não é o schema de negócio
-  final).
-- [`../oracle-init/12_exemplo_dominio_kawashi_core.sql`](../oracle-init/12_exemplo_dominio_kawashi_core.sql)
-  — mais exemplos ilustrativos do mesmo padrão (ORGANIZACOES, LOGIN, ADMINISTRACAO — ver seção 2.2).
+- [`../oracle-init/11_fixture_contrato_segmentacao.sql`](../oracle-init/11_fixture_contrato_segmentacao.sql)
+  — fixture mínima (`CLIENTE` + `SEFAZ.CONFIGURACAO_FISCAL`) pros testes de contrato do padrão
+  tabela padrão + schema de serviço. Não é domínio de negócio — ver seção 2.2.
 - [`../../README.md`](../../README.md) — visão geral do projeto e roadmap.

@@ -4,9 +4,9 @@
     Teste de CAIXA-BRANCA (invariante de arquitetura): confirma que NENHUMA
     tabela de um schema PADRAO (KAWASHI_ENV_TESTE_DEV, _TESTE_INFRA, _DEV,
     _INFRA, _HOMOLOG, _PROD) tem foreign key apontando pra dentro de um schema
-    de SERVICO (SEFAZ, SIMPLES_NACIONAL, ORGANIZACOES, LOGIN, ADMINISTRACAO,
-    ou qualquer outro criado no futuro) - a FK so pode existir no sentido
-    SERVICO -> PADRAO, nunca o inverso (ver arquitetura.md, secao 2.1).
+    de SERVICO (SEFAZ, SIMPLES_NACIONAL, ou qualquer outro criado no futuro,
+    inclusive os que vivem no repositorio de tabelas) - a FK so pode existir
+    no sentido SERVICO -> PADRAO, nunca o inverso (ver arquitetura.md, secao 2.1).
 
 .DESCRIPTION
     Pergunta levantada pelo usuario: "nao e interessante fazer testes? tipo
@@ -24,9 +24,18 @@
 
     Controles positivos (pra provar que a consulta nao e vazia por acidente -
     uma consulta que nunca encontra nada "passaria" mesmo quebrada): confirma
-    que as FKs servico->padrao conhecidas (SEFAZ, ADMINISTRACAO, LOGIN - ver
-    infra/oracle-init/11_exemplo_dominio_negocio.sql e
-    12_exemplo_dominio_kawashi_core.sql) realmente existem no sentido certo.
+    que a FK servico->padrao da fixture (SEFAZ - ver
+    infra/oracle-init/11_fixture_contrato_segmentacao.sql) realmente existe
+    no sentido certo.
+
+    Este teste e um CONTRATO que qualquer repositorio de tabelas precisa
+    cumprir, por isso mora no repositorio de regras. A versao anterior a
+    separacao tinha 5 casos - os 3 casos extras (controles positivos de
+    ADMINISTRACAO e LOGIN + conferencia de que os 6 schemas de exemplo
+    existiam) dependiam de schemas que agora vivem no repositorio de tabelas.
+    O original completo esta preservado na tag git
+    "dominio-completo-pre-separacao" e deve voltar la, como controles
+    proprios do mesmo contrato.
 #>
 [CmdletBinding()]
 param(
@@ -68,29 +77,11 @@ SELECT a.owner || '->' || a.r_owner
 FROM dba_constraints a
 JOIN dba_constraints b ON a.r_owner = b.owner AND a.r_constraint_name = b.constraint_name
 WHERE a.constraint_type = 'R'
-  AND a.owner IN ('KAWASHI_ENV_DEV_SEFAZ', 'KAWASHI_ENV_DEV_ADMINISTRACAO', 'KAWASHI_ENV_DEV_LOGIN');
+  AND a.owner = 'KAWASHI_ENV_DEV_SEFAZ';
 EXIT;
 "@
 $outControles = (Invoke-SqlPlus -ConnectString $engineerConn -Sql $sqlControles) -join "`n"
 $results += New-TestResult -Name "Controle positivo: KAWASHI_ENV_DEV_SEFAZ tem FK apontando pro padrao (KAWASHI_ENV_DEV) - consulta nao e vazia por acidente" -Passed ($outControles -match 'KAWASHI_ENV_DEV_SEFAZ->KAWASHI_ENV_DEV\b') -Details $(if ($outControles -notmatch 'KAWASHI_ENV_DEV_SEFAZ->KAWASHI_ENV_DEV\b') { $outControles })
-$results += New-TestResult -Name "Controle positivo: KAWASHI_ENV_DEV_ADMINISTRACAO tem FK apontando pro padrao (KAWASHI_ENV_DEV)" -Passed ($outControles -match 'KAWASHI_ENV_DEV_ADMINISTRACAO->KAWASHI_ENV_DEV\b') -Details $(if ($outControles -notmatch 'KAWASHI_ENV_DEV_ADMINISTRACAO->KAWASHI_ENV_DEV\b') { $outControles })
-$results += New-TestResult -Name "Controle positivo: KAWASHI_ENV_DEV_LOGIN tem FK apontando pro servico ORGANIZACOES, nao pro padrao direto" -Passed ($outControles -match 'KAWASHI_ENV_DEV_LOGIN->KAWASHI_ENV_DEV_ORGANIZACOES') -Details $(if ($outControles -notmatch 'KAWASHI_ENV_DEV_LOGIN->KAWASHI_ENV_DEV_ORGANIZACOES') { $outControles })
-
-# --- Sanity: os 3 schemas novos existem nos 2 ambientes onde deveriam ---
-$sqlSchemas = @"
-SET PAGESIZE 0
-SET FEEDBACK OFF
-SELECT username FROM dba_users
-WHERE username IN (
-    'KAWASHI_ENV_TESTE_DEV_ORGANIZACOES', 'KAWASHI_ENV_TESTE_DEV_LOGIN', 'KAWASHI_ENV_TESTE_DEV_ADMINISTRACAO',
-    'KAWASHI_ENV_DEV_ORGANIZACOES', 'KAWASHI_ENV_DEV_LOGIN', 'KAWASHI_ENV_DEV_ADMINISTRACAO'
-)
-ORDER BY username;
-EXIT;
-"@
-$outSchemas = (Invoke-SqlPlus -ConnectString $engineerConn -Sql $sqlSchemas) -join "`n"
-$qtdSchemas = ([regex]::Matches($outSchemas, 'KAWASHI_ENV_(TESTE_DEV|DEV)_(ORGANIZACOES|LOGIN|ADMINISTRACAO)')).Count
-$results += New-TestResult -Name "Os 3 schemas de exemplo (ORGANIZACOES/LOGIN/ADMINISTRACAO) existem em TESTE_DEV e DEV (6 no total)" -Passed ($qtdSchemas -eq 6) -Details $(if ($qtdSchemas -ne 6) { "Encontrados: $qtdSchemas`n$outSchemas" })
 
 $results | ForEach-Object { Write-TestResult -Result $_ }
 return $results

@@ -7,7 +7,7 @@ teria pego — só rodando de verdade. Este documento registra cada um: o sintom
 e a correção, para servir de referência caso algo parecido apareça de novo (ou para explicar,
 numa apresentação/defesa, que o projeto foi validado na prática, não só no papel).
 
-Mais problemas (itens 8 a 19 abaixo) apareceram depois, em rodadas seguintes de testes —
+Mais problemas (itens 8 a 20 abaixo) apareceram depois, em rodadas seguintes de testes —
 desta vez escrevendo e expandindo a suíte automatizada em `infra/tests/` (ver
 `infra/tests/README.md`) em vez de testar na mão. Os itens 11 e 12 são os mais graves em termos de
 auditoria (a trilha de segurança própria nunca tinha gravado uma única linha de verdade, desde o
@@ -15,7 +15,9 @@ primeiro boot); o item 15 é o mais grave em termos de controle de acesso (o pr�
 onboarding permitia conceder `DBA` completo a qualquer conta, sem nenhuma resistência); o item 17
 apareceu implementando a segmentação por serviço descrita em `infra/tests/README.md` e no item 16;
 o item 18 é um teste preventivo (não um bug encontrado), escrito a pedido do usuário para garantir
-que o problema do item 17 nunca aconteça no sentido inverso (padrão referenciando serviço).
+que o problema do item 17 nunca aconteça no sentido inverso (padrão referenciando serviço); o
+item 20 é uma decisão de arquitetura (separar este repositório de regras do repositório de
+tabelas), registrada junto porque mexeu em arquivos, testes e contagens documentados acima.
 
 ## 1. `SEC_MAX_FAILED_LOGIN_ATTEMPTS` setado no PDB errado
 
@@ -443,7 +445,8 @@ nenhuma entre pessoas diferentes com o mesmo perfil.
 ## 17. `GRANT REFERENCES` habilita a FK mas não dá nenhuma permissão de leitura
 
 **Sintoma:** implementando a segmentação por serviço (schemas padrão + SEFAZ/SIMPLES_NACIONAL,
-ver `09_environments.sql` seção 2.1 e `11_exemplo_dominio_negocio.sql`), um `Desenvolvedor` com
+ver `09_environments.sql` seção 2.1 e `11_exemplo_dominio_negocio.sql` — hoje
+`11_fixture_contrato_segmentacao.sql`, ver item 20), um `Desenvolvedor` com
 `-Servicos SEFAZ` conseguia criar a tabela de serviço com a foreign key apontando pra tabela
 padrão (`CLIENTE`) sem problema — mas o primeiro `SELECT` com `JOIN` entre as duas, exatamente o
 motivo de a FK existir, falhava:
@@ -457,7 +460,7 @@ que a coluna referenciada é única/existe), não concede nenhum direito de **le
 tabela referenciada. É perfeitamente possível (e foi exatamente o que aconteceu aqui) ter uma FK
 válida e funcional sem conseguir fazer `SELECT` do outro lado dela.
 
-**Correção** (`11_exemplo_dominio_negocio.sql`): além do `GRANT REFERENCES` já previsto, cada
+**Correção** (`11_exemplo_dominio_negocio.sql`, hoje `11_fixture_contrato_segmentacao.sql`): além do `GRANT REFERENCES` já previsto, cada
 schema de serviço recebe `GRANT SELECT` em **todas** as tabelas padrão do mesmo ambiente (não só
 na que tem FK direta) — a ideia sendo que quem tem acesso a um serviço enxerga o padrão inteiro
 daquele ambiente, não só o pedaço que uma FK específica toca.
@@ -486,9 +489,15 @@ acidente): confirma que as FKs serviço→padrão conhecidas realmente existem n
 `KAWASHI_ENV_DEV_LOGIN` → `KAWASHI_ENV_DEV_ORGANIZACOES`.
 
 **Contexto:** escrito na mesma rodada em que três novos schemas de exemplo foram adicionados
-(`ORGANIZACOES`, `LOGIN`, `ADMINISTRACAO` — ver `infra/oracle-init/12_exemplo_dominio_kawashi_core.sql`
-e `arquitetura.md`), pedidos explicitamente como mais material de referência/teste do padrão
-padrão+serviço, sem aprofundar o desenho de nenhum deles.
+(`ORGANIZACOES`, `LOGIN`, `ADMINISTRACAO` — `12_exemplo_dominio_kawashi_core.sql`), pedidos
+explicitamente como mais material de referência/teste do padrão padrão+serviço, sem aprofundar o
+desenho de nenhum deles.
+
+**Atualização (separação de repositórios, item 20):** esses 3 schemas e o `12` saíram deste
+repositório. O teste continua aqui, como **contrato**, mas com 2 casos em vez de 5: a invariante
+genérica e o controle positivo do SEFAZ. Os controles de `ADMINISTRACAO`/`LOGIN` e a conferência
+dos 6 schemas dependiam de schemas que agora vivem no repositório de tabelas e devem voltar lá. A
+versão original, com 5 casos, está na tag `dominio-completo-pre-separacao`.
 
 ## 19. (achado de metodologia, não um bug) `DBA_PROXIES` grava CLIENT/PROXY ao contrário do que o nome sugere
 
@@ -513,6 +522,50 @@ ambientes (`KAWASHI_ENV_DEV`, `KAWASHI_ENV_HOMOLOG`, etc.) que `JOAO` já alcan�
 **Não é bug de código** (nenhum script deste projeto usava `DBA_PROXIES` antes) — fica
 registrado como nota de metodologia, pro caso de alguém escrever uma consulta nova contra essa
 view no futuro e cair na mesma armadilha.
+
+## 20. (decisão de arquitetura, não um bug) Separar as regras do banco das tabelas de negócio
+
+**Contexto:** até o item 19 este repositório misturava dois assuntos com ciclos de vida
+diferentes: as **regras** do banco (hardening, ambientes, RBAC por proxy, auditoria, onboarding,
+Vault, testes) e **tabelas de negócio** de exemplo (`11` e `12`). Quando ficou claro que as
+tabelas e uma API do banco vão ganhar vida própria, decidiu-se separá-las: regra muda pouco e com
+revisão pesada (Infra/SecOps é dono), tabela muda toda semana (Dev é dono). Também dá casa
+natural ao item adiado de sincronização de estrutura entre ambientes, que é um problema de
+migração de schema do lado das tabelas.
+
+**O que ficou neste repositório:** as 4 tabelas de controle de segurança (`03`:
+`KAWASHI_ALLOWED_IPS`, `KAWASHI_FORBIDDEN_TOOLS`, `KAWASHI_SECURITY_LOG` e o fallback) e uma
+**fixture mínima** de 2 tabelas (`11_fixture_contrato_segmentacao.sql`: `CLIENTE` e
+`SEFAZ.CONFIGURACAO_FISCAL`, só em `TESTE_DEV`/`DEV`), suficiente pra os testes de segmentação,
+de concessão de serviço e de invariante de FK terem o que exercitar.
+
+**O que saiu:** `ENDERECO`, `CONTATO`, `EMPRESA`, `FILIAL`, `SOCIO` (resto do antigo `11`) e todo
+o `12` (schemas `ORGANIZACOES`, `LOGIN`, `ADMINISTRACAO`), que irão pro repositório de tabelas.
+Os controles do invariante de FK ligados a esses schemas saíram junto (5 casos → 2; suíte 250 →
+247 casos, mesmos 35 arquivos).
+
+**Nada foi descartado:** a tag git `dominio-completo-pre-separacao` (commit `cadb773`) guarda o estado completo de
+antes (suíte de 250 casos verde, os dois SQL de domínio originais, o invariante de 5 casos e as
+seções 2.1/2.2 originais de `arquitetura.md`). Conferido byte a byte na hora da separação.
+
+**Criar conta de banco não depende de tabela de negócio:** a identidade de desenvolvedor vive no
+dicionário do Oracle (`DBA_USERS`/`DBA_PROXIES`) e a senha no Vault; nenhum script de onboarding
+grava em tabela de negócio. As únicas tabelas tocadas no caminho são as 4 de controle de
+segurança: os triggers de auditoria gravam em `KAWASHI_SECURITY_LOG` (e no fallback) e o de logon
+lê `KAWASHI_ALLOWED_IPS`/`KAWASHI_FORBIDDEN_TOOLS`. `LOGIN.USUARIO` (repositório de tabelas) será
+o usuário do **site**, outro conceito.
+
+**Pontos que a separação deixou em aberto** (também em Technical Debts no README):
+1. *Como o repositório de tabelas é aplicado sobre este.* O `oracle-init` roda uma vez, no 1º
+   boot, numa pasta só; as regras precisam subir antes das tabelas. Opções: script de aplicação
+   pós-bootstrap (parecido com `vault-init.ps1`) ou submódulo. Não decidido; testar ao vivo
+   antes.
+2. *Onde mora a regra "serviço lê todas as tabelas padrão".* Hoje é um `GRANT SELECT` em loop no
+   `11`, que roda uma vez e não alcança tabelas padrão criadas depois (consequência direta do
+   achado do item 17). Pode virar uma procedure de regra exposta aqui e chamada pelo repositório
+   de tabelas.
+3. *Conta de API por ambiente.* Só existe uma conta de API (`KAWASHI_SPRING_USER`), sem relação
+   com os 6 ambientes; ver o TODO em `09_environments.sql`.
 
 ## Validação final
 

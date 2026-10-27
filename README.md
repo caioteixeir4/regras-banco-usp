@@ -3,6 +3,30 @@
 Este repositório contém a infraestrutura de segurança e o sistema de monitoramento (SIEM)
 focado em banco de dados para a Kawashi Sistemas.
 
+## 🧭 Escopo deste repositório
+
+Aqui ficam as **regras do banco de dados** da Kawashi: hardening, ambientes de ciclo de vida,
+RBAC por proxy, auditoria/SIEM, onboarding via Vault e a suíte de testes que prova tudo isso.
+Este repositório **não** é o lugar das tabelas de negócio nem da API do banco — esses vão viver
+em um repositório separado (ainda a criar), que roda sobre as regras daqui.
+
+- **Tabelas que ficam aqui** (só as essenciais): as 4 de controle de segurança em
+  [`03_dynamic_tables.sql`](infra/oracle-init/03_dynamic_tables.sql) (`KAWASHI_ALLOWED_IPS`,
+  `KAWASHI_FORBIDDEN_TOOLS`, `KAWASHI_SECURITY_LOG` e o fallback) e uma **fixture mínima** de
+  duas tabelas (`CLIENTE` e `SEFAZ.CONFIGURACAO_FISCAL`, só em `TESTE_DEV`/`DEV`) em
+  [`11_fixture_contrato_segmentacao.sql`](infra/oracle-init/11_fixture_contrato_segmentacao.sql),
+  pra os testes de contrato terem o que exercitar.
+- **O que vai pro repositório de tabelas:** as tabelas padrão completas (`ENDERECO`, `EMPRESA`,
+  `FILIAL`, `CONTATO`, `SOCIO`...), os schemas de plataforma (`ORGANIZACOES`, `LOGIN`,
+  `ADMINISTRACAO`) e a API do banco.
+- **Nada foi descartado.** A tag git `dominio-completo-pre-separacao` (commit `cadb773`) guarda o
+  repositório exatamente como estava antes da separação, com os dois SQL de domínio e as docs
+  completas.
+  Ver [`arquitetura.md`, seção 2.2](infra/docs/arquitetura.md) e o item 20 de
+  [`bugs-primeiro-teste.md`](infra/docs/bugs-primeiro-teste.md).
+- Criar uma conta de banco (desenvolvedor ou API) não depende de nenhuma tabela de negócio: a
+  identidade vive no dicionário do Oracle e a senha no Vault.
+
 ## 🚀 Arquitetura Geral
 O projeto utiliza um modelo de defesa em camadas (Defense in Depth) para proteger
 ativos de dados críticos. Para diagramas (containers/rede, ambientes de ciclo de vida e o
@@ -14,8 +38,9 @@ fluxo de onboarding via Vault), veja [`infra/docs/arquitetura.md`](infra/docs/ar
    sem `$` nem `#` — ver comentários do próprio arquivo).
 2. `docker compose up` dentro de `infra/` — aguarde o container `kawashi-oracle` ficar
    `healthy` (`docker ps`), pode levar alguns minutos no primeiro boot.
-3. Rode `infra/scripts/verify-environment.ps1` — confirma que os 9 scripts de bootstrap
-   compilaram sem erro (muito PL/SQL aqui nunca tinha rodado contra um Oracle de verdade).
+3. Rode `infra/scripts/verify-environment.ps1` — confere se sobrou algum objeto `KAWASHI_*`
+   inválido (PL/SQL com erro de compilação) e se os jobs agendados estão ativos, depois do
+   bootstrap `01` a `11` (muito PL/SQL aqui nunca tinha rodado contra um Oracle de verdade).
 4. Rode `infra/scripts/vault-init.ps1` — o Vault sobe "vazio" toda vez (modo dev), esse
    script configura o engine de segredos e o login por usuário/senha.
 5. Para dar acesso a alguém (inclusive você mesmo, se quiser um perfil além do `ENGINEER_USER`),
@@ -31,7 +56,7 @@ em [`infra/docs/bugs-primeiro-teste.md`](infra/docs/bugs-primeiro-teste.md).
 
 ### Banco de dados e hardening (bootstrap automático)
 Tudo abaixo roda sozinho na primeira inicialização do container Oracle, via os scripts
-numerados em [`infra/oracle-init/`](infra/oracle-init/) (`01` a `12` — os comentários de cada
+numerados em [`infra/oracle-init/`](infra/oracle-init/) (`01` a `11` — os comentários de cada
 arquivo explicam o "porquê" de cada peça, não só o "o quê"):
 
 - Tablespaces separadas para dados de negócio, logs de auditoria e cada ambiente de ciclo
@@ -68,13 +93,10 @@ arquivo explicam o "porquê" de cada peça, não só o "o quê"):
   Produção**) como schemas isolados logicamente, com acesso via *proxy authentication* — `09`.
 - Segmentação por serviço DENTRO de cada ambiente: tabelas padrão compartilhadas (ex: `CLIENTE`)
   mais schemas de serviço (ex: `SEFAZ`, `SIMPLES_NACIONAL`) com FK de volta pro padrão, visíveis
-  só a quem tem liberação explícita — `09` (schemas/grants) e `11` (exemplo ilustrativo).
-- Mais exemplos ilustrativos do mesmo padrão padrão+serviço, pra ter mais referência e mais
-  material de teste: `ORGANIZACOES` (tenants do sistema Kawashi), `LOGIN` (autenticação,
-  usuário pertencendo a mais de uma organização, trilha de login/troca de senha) e
-  `ADMINISTRACAO` (faturamento dos clientes da própria Kawashi) — `12`. Um teste de regressão
-  garante que a FK entre padrão e serviço só existe no sentido serviço→padrão, nunca o
-  contrário — [`Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`](infra/tests/caixa-branca/Test-InvarianteFkPadraoNuncaReferenciaServico.ps1).
+  só a quem tem liberação explícita — `09` (schemas/grants) e `11` (fixture mínima, não domínio).
+- Um teste de contrato garante que a FK entre padrão e serviço só existe no sentido
+  serviço→padrão, nunca o contrário — o repositório de tabelas precisa passar nele —
+  [`Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`](infra/tests/caixa-branca/Test-InvarianteFkPadraoNuncaReferenciaServico.ps1).
 
 ### RBAC — perfis de acesso do time
 Perfis prontos que já definem automaticamente em qual ambiente cada pessoa pode
@@ -134,10 +156,10 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
       authentication, incluindo a divisão TESTE em TESTE_DEV/TESTE_INFRA por equipe). Isolamento
       **físico** (PDBs ou containers/instâncias separadas) ainda pendente — depende da
       arquitetura de hospedagem (local vs AWS) ser decidida.
-- [~] Segmentação por serviço: schemas padrão + serviço (SEFAZ/SIMPLES_NACIONAL, ORGANIZACOES,
-      LOGIN e ADMINISTRACAO de exemplo) com FK e GRANT SELECT entre eles, liberação aditiva via
-      `-Servicos`, e teste de regressão garantindo que a FK nunca aponta no sentido errado
-      (padrão→serviço). Falta: sincronização automática de estrutura entre ambientes quando uma
+- [~] Segmentação por serviço: schemas padrão + serviço (SEFAZ/SIMPLES_NACIONAL) com FK e GRANT
+      SELECT entre eles (fixture mínima), liberação aditiva via `-Servicos`, e teste de contrato
+      garantindo que a FK nunca aponta no sentido errado (padrão→serviço). As tabelas de negócio
+      em si vão pro repositório de tabelas (ver "Escopo deste repositório"). Falta: sincronização automática de estrutura entre ambientes quando uma
       tabela de serviço é promovida (migração de schema, tipo Flyway/Liquibase) e acesso
       restrito/temporário a Homologação e Produção.
 - [ ] TDE (Transparent Data Encryption): Configurar criptografia em repouso no nível de Tablespace para o "balde" do Java.
@@ -146,7 +168,7 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - [ ] Confidential Computing: Pesquisar o uso de Enclaves (Intel SGX) para processar dados na RAM de forma isolada.
 
 2. Camada de Identidade e Acesso (As Chaves)
-- [x] RBAC (Role-Based Access Control): perfis `Estagiario`/`Desenvolvedor`/`Infra`/`HomologViewer` implementados (ver acima).
+- [x] RBAC (Role-Based Access Control): perfis `EstagiarioDev`/`EstagiarioInfra`/`Desenvolvedor`/`Infra`/`HomologViewer` implementados (ver acima).
 - [~] Secret Management (Vault): infraestrutura do cofre pronta e configurada por código; falta a aplicação em si consumir os segredos em runtime.
 - [ ] Dynamic Credentials: Configurar o Vault para gerar senhas que expiram em curto prazo para o microserviço.
 - [ ] Zero Trust & MFA: Exigir segundo fator de autenticação para qualquer humano que tente acessar a base de Produção.
@@ -198,7 +220,14 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - Ainda não decidido: quando a aplicação Spring Boot for a produção de verdade, ela deve
   conectar contra o schema `KAWASHI_ENV_PROD` (o "Produção" deste modelo de ambientes), ou o
   `SPRING_APP_USER` atual continua sendo uma coisa à parte? Ver TODO em
-  [`infra/oracle-init/09_environments.sql`](infra/oracle-init/09_environments.sql).
+  [`infra/oracle-init/09_environments.sql`](infra/oracle-init/09_environments.sql). Relacionado:
+  hoje só existe uma conta de API, sem relação com os 6 ambientes; falta o equivalente do
+  `create-team-member.ps1` pra contas de API por ambiente.
+- Ainda não decidido: **como o repositório de tabelas é aplicado sobre este** (ordem — regras
+  sobem primeiro, tabelas depois; script de aplicação pós-bootstrap ou submódulo) e **onde mora
+  a regra "serviço lê todas as tabelas padrão"** (`GRANT SELECT` em loop, hoje no `11`, que só
+  roda no primeiro boot e não alcança tabelas padrão criadas depois). Ver nota no `11` e
+  `arquitetura.md`, seção 2.2.
 
 ## 👤 Gestão de Usuários
 

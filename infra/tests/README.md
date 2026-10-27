@@ -43,7 +43,10 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (37 arquivos, 250 casos):
+Arquivos de teste atuais, por categoria (35 arquivos, 247 casos — eram 250 antes da separação do
+repositório de tabelas, ver "Rodada" mais abaixo; versões anteriores desta doc diziam "37
+arquivos", contagem errada que já existia antes da separação — o número real de `Test-*.ps1` em
+disco sempre foi 35):
 
 - `unitarios/`: `Test-PasswordVerifyFunction.ps1`
 - `caixa-branca/`: `Test-ProfileEHardeningInternals.ps1`, `Test-HomologAutograntTrigger.ps1`,
@@ -99,10 +102,11 @@ Arquivos de teste atuais, por categoria (37 arquivos, 250 casos):
 Resposta direta ao achado do `Test-ControleColetivoDentroDoAmbiente.ps1` acima: o ambiente
 `TESTE` único virou dois (`TESTE_DEV`/`TESTE_INFRA`, um por equipe, perfis `EstagiarioDev`/
 `EstagiarioInfra`) e cada um dos 6 ambientes ganhou schemas de SERVIÇO (`SEFAZ`,
-`SIMPLES_NACIONAL` de exemplo) com tabelas padrão compartilhadas (`CLIENTE`, `ENDERECO`, etc.) e
+`SIMPLES_NACIONAL` de exemplo) com tabela padrão compartilhada (`CLIENTE`) e
 liberação aditiva via `-Servicos` - ver `09_environments.sql` seção 2.1,
-`11_exemplo_dominio_negocio.sql`, e o plano completo em
-[`bugs-primeiro-teste.md`](../docs/bugs-primeiro-teste.md).
+`11_fixture_contrato_segmentacao.sql` (na época `11_exemplo_dominio_negocio.sql`, com mais
+tabelas padrão; a versão completa está na tag `dominio-completo-pre-separacao`), e o plano
+completo em [`bugs-primeiro-teste.md`](../docs/bugs-primeiro-teste.md).
 
 - `Test-MatrizAcessoPorPerfil.ps1` cresceu de 4 para 5 perfis e de 5 para 6 ambientes - cobre
   `EstagiarioDev`/`EstagiarioInfra` cada um só no seu próprio `TESTE_*`, então uma
@@ -126,9 +130,28 @@ mais referência/material de teste, sem aprofundar o desenho de nenhum deles.
 - `Test-InvarianteFkPadraoNuncaReferenciaServico.ps1` (novo, caixa-branca): consulta genérica a
   `DBA_CONSTRAINTS` que confirma, nos 6 ambientes, que nenhuma tabela padrão tem FK apontando pra
   dentro de um schema de serviço (o contrário do padrão servico→padrão já estabelecido) -
-  funciona pra qualquer serviço futuro, sem listar nomes. Inclui controles positivos (SEFAZ,
-  ADMINISTRACAO e LOGIN apontando no sentido certo) pra provar que a consulta não passaria vazia
-  por acidente - ver item 18 de `bugs-primeiro-teste.md` (achado preventivo, não um bug).
+  funciona pra qualquer serviço futuro, sem listar nomes. Inclui controle positivo (SEFAZ
+  apontando no sentido certo) pra provar que a consulta não passaria vazia por acidente - ver
+  item 18 de `bugs-primeiro-teste.md` (achado preventivo, não um bug). Nesta rodada ele tinha 5
+  casos, com controles extras de `ORGANIZACOES`/`LOGIN`/`ADMINISTRACAO`; esses 3 saíram na
+  rodada seguinte (abaixo), junto com os schemas.
+
+### Rodada "separar regras do banco das tabelas de negócio"
+
+Decisão de arquitetura (item 20 de `bugs-primeiro-teste.md`): este repositório fica só com as
+**regras** do banco; as tabelas de negócio e a API do banco vão pra um repositório separado.
+O que mudou na suíte:
+
+- `12_exemplo_dominio_kawashi_core.sql` (schemas `ORGANIZACOES`/`LOGIN`/`ADMINISTRACAO`) saiu do
+  repositório; `11` virou `11_fixture_contrato_segmentacao.sql`, só `CLIENTE` e
+  `SEFAZ.CONFIGURACAO_FISCAL`, que é tudo que `Test-SegmentacaoPorServico.ps1`,
+  `Test-ConcessaoServicoUsuarioExistente.ps1` e o invariante de FK precisam.
+- `Test-InvarianteFkPadraoNuncaReferenciaServico.ps1` passou de 5 para 2 casos (a invariante
+  genérica + o controle positivo do SEFAZ); por isso a suíte esperada passa de 250 para **247**
+  casos, nos mesmos 35 arquivos. Ele agora é lido como **contrato**: o repositório de tabelas
+  precisa passar nele.
+- Nada foi perdido: a tag git `dominio-completo-pre-separacao` guarda o estado completo de antes
+  (250 casos verdes, os dois SQL de domínio, o invariante de 5 casos).
 
 ### Rodada "conceder serviço depois, pra quem já tem conta"
 
