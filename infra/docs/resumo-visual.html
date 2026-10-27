@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Copia local da pagina de resumo do repositorio (a mesma publicada como artefato). Os diagramas usam Mermaid via CDN, entao precisa de internet. Abra este arquivo direto no navegador. -->
+<style>body{margin:0}</style>
+<title>Regras do Banco Kawashi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: guia de campo em coluna única. Cada seção abre com a frase que resume
+     a seção, depois o desenho, depois o detalhe. Mesma família visual do Mapa do Banco. */
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef2f7;
+    --border: #d9e0e8;
+    --text: #141c26;
+    --text-dim: #5a6b7d;
+    --accent: #0e8a8c;
+    --accent-strong: #0b6d6f;
+    --accent-soft: #e3f4f3;
+    --accent-2: #93690a;
+    --accent-2-soft: #f8edd9;
+    --danger: #ad3a2f;
+    --danger-soft: #f9e8e6;
+    --c1: #0e8a8c;
+    --c2: #0b4f68;
+    --c3: #93690a;
+    --c4: #8a97a6;
+    --radius: 12px;
+    --font-display: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+    --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a1420; --surface: #101e2f; --surface-2: #16293d; --border: #28425c;
+      --text: #e8eef4; --text-dim: #93a7bd;
+      --accent: #5fe3d6; --accent-strong: #8aeee3; --accent-soft: #11302e;
+      --accent-2: #f3bd4a; --accent-2-soft: #352910;
+      --danger: #ef6a5c; --danger-soft: #3a1c18;
+      --c1: #5fe3d6; --c2: #4aa3d8; --c3: #f3bd4a; --c4: #6f8399;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a1420; --surface: #101e2f; --surface-2: #16293d; --border: #28425c;
+    --text: #e8eef4; --text-dim: #93a7bd;
+    --accent: #5fe3d6; --accent-strong: #8aeee3; --accent-soft: #11302e;
+    --accent-2: #f3bd4a; --accent-2-soft: #352910;
+    --danger: #ef6a5c; --danger-soft: #3a1c18;
+    --c1: #5fe3d6; --c2: #4aa3d8; --c3: #f3bd4a; --c4: #6f8399;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; animation: none !important; }
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); line-height: 1.55; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; }
+  code, .mono { font-family: var(--font-mono); }
+  code { font-size: 0.88em; background: var(--surface-2); border-radius: 4px; padding: 1px 5px; }
+  a { color: var(--accent-strong); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- nav ---------- */
+  .toc-outer {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(6px); border-bottom: 1px solid var(--border);
+  }
+  .toc { display: flex; gap: 6px; overflow-x: auto; padding-block: 10px; scrollbar-width: none; }
+  .toc::-webkit-scrollbar { display: none; }
+  .toc a {
+    flex: none; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem;
+    text-decoration: none; color: var(--text-dim); padding: 7px 14px; border-radius: 999px;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .toc a:hover, .toc a.active { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--border); }
+
+  /* ---------- hero ---------- */
+  .hero { padding-block: 44px 30px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--font-display); font-weight: 700; font-size: clamp(2.1rem, 5.4vw, 3.3rem);
+    line-height: 1.04; margin: 0 0 14px; text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .lede { font-size: 1.08rem; color: var(--text-dim); max-width: 64ch; margin: 0 0 26px; }
+
+  .glance { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; margin: 0 0 22px; }
+  .glance-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 12px 18px; align-items: baseline; }
+  .glance-row + .glance-row { border-top: 1px solid var(--border); }
+  .glance dt { font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; color: var(--accent-strong); margin: 0; }
+  .glance dd { margin: 0; font-size: 0.97rem; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 0; border-block: 1px solid var(--border); }
+  .stat { flex: 1 1 130px; padding: 14px 16px; }
+  .stat + .stat { border-left: 1px solid var(--border); }
+  .stat b { display: block; font-family: var(--font-display); font-size: 1.9rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 0.82rem; color: var(--text-dim); }
+
+  /* ---------- sections ---------- */
+  .section { padding-block: 42px; border-bottom: 1px solid var(--border); }
+  .section:last-of-type { border-bottom: none; }
+  .section-tag {
+    display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--accent-2); background: var(--accent-2-soft);
+    border-radius: 6px; padding: 3px 8px; margin-bottom: 10px;
+  }
+  .section h2 {
+    font-family: var(--font-display); font-weight: 700; font-size: clamp(1.5rem, 3.2vw, 2.05rem);
+    line-height: 1.12; margin: 0 0 8px; text-wrap: balance;
+  }
+  .section > p.desc { color: var(--text-dim); max-width: 68ch; margin: 0 0 22px; font-size: 1.02rem; }
+  h3 { font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; margin: 26px 0 10px; }
+
+  /* ---------- diagram ---------- */
+  .diagram-frame {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px; overflow-x: auto; margin-bottom: 14px;
+  }
+  .diagram-frame pre.mermaid { margin: 0; }
+  .note { font-size: 0.88rem; color: var(--text-dim); max-width: 74ch; margin: 0 0 20px; }
+  .note strong { color: var(--text); }
+
+  /* ---------- cards ---------- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 18px 14px; min-width: 0; }
+  .card h3 { margin: 0 0 4px; font-size: 1.08rem; }
+  .card .where { font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-dim); margin: 0 0 10px; }
+  .card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 0.93rem; }
+  .card li::marker { color: var(--accent); }
+  .card.flat { background: transparent; }
+  .kv { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 6px 14px; font-size: 0.92rem; margin: 0; }
+  .kv dt { color: var(--text-dim); margin: 0; }
+  .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+  /* ---------- tables ---------- */
+  .table-frame { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 10px 16px; vertical-align: top; }
+  thead th {
+    font-family: var(--font-display); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--text-dim); background: var(--surface-2); border-bottom: 1px solid var(--border);
+  }
+  tbody tr + tr td { border-top: 1px solid var(--border); }
+  td.mono-first, tbody td:first-child { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; }
+  td.dim { color: var(--text-dim); }
+
+  /* ---------- steps ---------- */
+  ol.steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; counter-reset: s; }
+  ol.steps li {
+    counter-increment: s; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 0.94rem; align-items: start;
+  }
+  ol.steps li::before {
+    content: counter(s); width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong);
+    font-family: var(--font-mono); font-weight: 600; font-size: 0.82rem; display: grid; place-items: center;
+  }
+  ol.steps li small { display: block; color: var(--text-dim); font-size: 0.84rem; margin-top: 2px; }
+
+  /* ---------- callouts ---------- */
+  .callouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
+  .callout { background: var(--accent-2-soft); border-radius: 10px; padding: 12px 14px; font-size: 0.9rem; min-width: 0; }
+  .callout b { display: block; font-family: var(--font-display); color: var(--accent-2); margin-bottom: 3px; }
+
+  /* ---------- inventory strip ---------- */
+  .inv { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+  .inv span { font-family: var(--font-mono); font-size: 0.82rem; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-variant-numeric: tabular-nums; }
+  .inv b { color: var(--accent-strong); }
+
+  /* ---------- tests bar ---------- */
+  .bar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; gap: 2px; margin: 4px 0 14px; }
+  .bar i { display: block; min-width: 4px; }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .lg { min-width: 0; }
+  .lg h3 { margin: 0 0 2px; font-size: 1.02rem; display: flex; align-items: center; gap: 8px; }
+  .lg h3 i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; flex: none; }
+  .lg .n { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-dim); margin: 0 0 6px; font-variant-numeric: tabular-nums; }
+  .lg p { margin: 0; font-size: 0.92rem; }
+
+  /* ---------- findings ---------- */
+  .find { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  .find .no { font-family: var(--font-mono); font-size: 0.74rem; color: var(--danger); background: var(--danger-soft); border-radius: 6px; padding: 2px 8px; display: inline-block; margin-bottom: 8px; }
+  .find .no.arq { color: var(--accent-strong); background: var(--accent-soft); }
+  .find h3 { margin: 0 0 6px; font-size: 1.02rem; line-height: 1.25; }
+  .find p { margin: 0; font-size: 0.9rem; color: var(--text-dim); }
+
+  /* ---------- tree ---------- */
+  pre.tree {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; overflow-x: auto; margin: 0 0 14px; font-family: var(--font-mono); font-size: 0.84rem; line-height: 1.6;
+  }
+  pre.tree em { font-style: normal; color: var(--text-dim); }
+  pre.cmd { background: var(--surface-2); border-radius: 10px; padding: 12px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.84rem; margin: 0 0 14px; line-height: 1.6; }
+
+  /* ---------- roadmap ---------- */
+  .road { display: grid; gap: 10px; }
+  .road-row { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 14px; align-items: start; padding-block: 10px; border-top: 1px solid var(--border); }
+  .road-row:first-child { border-top: none; }
+  .road-row h3 { margin: 0; font-size: 0.98rem; }
+  .road-row h3 small { display: block; font-family: var(--font-body); font-weight: 400; font-size: 0.8rem; color: var(--text-dim); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 0.82rem; border-radius: 999px; padding: 4px 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); }
+  .chip.ok { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; font-weight: 600; }
+  .chip.part { background: var(--accent-2-soft); color: var(--accent-2); border-color: transparent; font-weight: 600; }
+  .key { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; font-size: 0.85rem; color: var(--text-dim); align-items: center; }
+
+  .footer { padding-block: 26px 52px; color: var(--text-dim); font-size: 0.85rem; max-width: 80ch; }
+
+  @media (max-width: 640px) {
+    .hero { padding-block: 32px 22px; }
+    .section { padding-block: 30px; }
+    .glance-row { grid-template-columns: 1fr; gap: 2px; }
+    .stat { flex-basis: 45%; }
+    .stat + .stat { border-left: none; }
+    .road-row { grid-template-columns: 1fr; gap: 8px; }
+    .kv { grid-template-columns: 1fr; gap: 0; }
+    .kv dd { margin-bottom: 8px; }
+  }
+</style>
+
+</head>
+<body>
+<div class="toc-outer">
+  <div class="wrap">
+    <nav class="toc" id="toc" aria-label="Seções">
+      <a href="#resumo">Resumo</a>
+      <a href="#escopo">Escopo</a>
+      <a href="#docker">Docker</a>
+      <a href="#oracle">Oracle</a>
+      <a href="#ambientes">Ambientes</a>
+      <a href="#tabelas">Tabelas</a>
+      <a href="#scripts">Scripts</a>
+      <a href="#testes">Testes</a>
+      <a href="#achados">Achados</a>
+      <a href="#arquivos">Arquivos</a>
+      <a href="#pendencias">Pendências</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="hero" id="resumo">
+    <p class="eyebrow">regras-banco-usp · Kawashi Sistemas</p>
+    <h1>Regras do Banco Kawashi</h1>
+    <p class="lede">
+      Tudo que protege o banco Oracle da Kawashi, escrito como código e provado por testes.
+      Esta página resume o repositório inteiro: Docker, Oracle, regras, ambientes, tabelas,
+      scripts e testes.
+    </p>
+
+    <dl class="glance">
+      <div class="glance-row"><dt>O que é</dt><dd>As regras de segurança do banco, escritas em SQL e PowerShell, que rodam contra um Oracle de verdade.</dd></div>
+      <div class="glance-row"><dt>Onde roda</dt><dd>Dois containers Docker: Oracle Database Free e HashiCorp Vault.</dd></div>
+      <div class="glance-row"><dt>O que protege</dt><dd>Senha, sessão, auditoria, logon, privilégios mínimos e 6 ambientes separados.</dd></div>
+      <div class="glance-row"><dt>Quem entra</dt><dd>Pessoas, por perfil, atuando como o schema do ambiente (proxy). A API usa uma conta de serviço própria.</dd></div>
+      <div class="glance-row"><dt>Como se prova</dt><dd>247 casos de teste em 35 arquivos, todos passando, rodando contra Oracle e Vault reais.</dd></div>
+      <div class="glance-row"><dt>O que não está aqui</dt><dd>Tabelas de negócio e a API do banco. Vão para o <code>tabelas-api-banco-usp</code>.</dd></div>
+    </dl>
+
+    <div class="stats">
+      <div class="stat"><b>11</b><span>scripts de bootstrap</span></div>
+      <div class="stat"><b>6</b><span>ambientes</span></div>
+      <div class="stat"><b>5</b><span>perfis de acesso</span></div>
+      <div class="stat"><b>4</b><span>tabelas de controle</span></div>
+      <div class="stat"><b>247</b><span>casos de teste</span></div>
+      <div class="stat"><b>20</b><span>achados documentados</span></div>
+    </div>
+  </header>
+
+  <section id="escopo" class="section">
+    <span class="section-tag">Escopo</span>
+    <h2>Este repositório guarda as regras, não as tabelas</h2>
+    <p class="desc">
+      As tabelas de negócio e a API do banco vão para o <code>tabelas-api-banco-usp</code>, que roda sobre as
+      regras daqui. Regra muda pouco e com revisão pesada. Tabela muda toda semana.
+    </p>
+
+    <div class="diagram-frame">
+      <pre class="mermaid">
+flowchart LR
+    subgraph REGRAS["regras-banco-usp (este repositório)"]
+        R1["Hardening, auditoria&lt;br/&gt;e trilha de segurança"]
+        R2["Ambientes, schemas de serviço,&lt;br/&gt;perfis e proxy"]
+        R3["Testes de contrato&lt;br/&gt;+ fixture mínima"]
+    end
+    subgraph TABELAS["tabelas-api-banco-usp"]
+        T1["Tabelas padrão&lt;br/&gt;CLIENTE, ENDERECO, EMPRESA..."]
+        T2["Tabelas de serviço e de plataforma&lt;br/&gt;SEFAZ, SIMPLES_NACIONAL, ORGANIZACOES, LOGIN..."]
+        T3["API do banco"]
+    end
+    TABELAS -- "precisa passar nos" --> R3
+    TABELAS -- "roda dentro dos schemas de" --> R2
+      </pre>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3>Fica aqui</h3>
+        <ul>
+          <li>As 4 tabelas de controle de segurança</li>
+          <li>Fixture mínima: <code>CLIENTE</code> e <code>SEFAZ.CONFIGURACAO_FISCAL</code>, só para os testes</li>
+          <li>Os schemas de serviço <code>SEFAZ</code> e <code>SIMPLES_NACIONAL</code> (as tabelas de negócio dentro deles ficam no outro repositório)</li>
+          <li>Hardening, ambientes, perfis, auditoria, Vault, scripts e testes</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Vai para o tabelas-api-banco-usp</h3>
+        <ul>
+          <li>Tabelas padrão completas: <code>ENDERECO</code>, <code>EMPRESA</code>, <code>FILIAL</code>, <code>CONTATO</code>, <code>SOCIO</code></li>
+          <li>Schemas <code>ORGANIZACOES</code>, <code>LOGIN</code> e <code>ADMINISTRACAO</code></li>
+          <li>A API do banco</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Nada foi descartado</h3>
+        <ul>
+          <li>Tag git <code>dominio-completo-pre-separacao</code> (commit <code>cadb773</code>) guarda o repositório inteiro de antes</li>
+          <li>Uma pasta-semente local tem os SQL originais, o teste de 5 casos e os diagramas de domínio</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note" style="margin-top:14px">
+      <strong>Criar uma conta de banco não depende de nenhuma tabela de negócio.</strong> A identidade
+      vive no dicionário do Oracle e a senha no Vault. <code>LOGIN.USUARIO</code>, no outro
+      repositório, é o usuário do site, outro conceito. O desenho completo das tabelas está no
+      <a href="https://claude.ai/artifact/5P4GEJLTAE8MBKY9Kf1pAR" target="_blank" rel="noopener">Mapa do Banco Kawashi</a>.
+    </p>
+  </section>
+
+  <section id="docker" class="section">
+    <span class="section-tag">Infraestrutura</span>
+    <h2>Dois containers numa rede privada</h2>
+    <p class="desc">
+      O ambiente sobe com <code>docker compose up</code> a partir de <code>infra/</code>. O Oracle guarda os dados e
+      as regras. O Vault guarda as senhas temporárias de quem está entrando.
+    </p>
+
+    <div class="diagram-frame">
+      <pre class="mermaid">
+flowchart TB
+    VOCE["Você e o time&lt;br/&gt;sqlplus, DBeaver, navegador"]
+    subgraph HOST["Sua máquina · Docker Compose"]
+        INIT["infra/oracle-init/*.sql&lt;br/&gt;11 scripts"]
+        SCR["Scripts PowerShell&lt;br/&gt;infra/scripts"]
+        subgraph NET["rede kawashi-net (bridge privada)"]
+            ORA["kawashi-oracle&lt;br/&gt;Oracle Free · porta 1521&lt;br/&gt;banco FREEPDB1"]
+            VLT["kawashi-vault&lt;br/&gt;Vault 1.15.6 · porta 8200&lt;br/&gt;modo dev, em memória"]
+        end
+    end
+    VOCE -- "1521 · SQL" --> ORA
+    VOCE -- "8200 · HTTP" --> VLT
+    INIT -. "montado no container, roda 1x no 1º boot" .-> ORA
+    SCR -- "docker exec" --> ORA
+    SCR -- "docker exec" --> VLT
+      </pre>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3>kawashi-oracle</h3>
+        <p class="where">gvenzl/oracle-free:latest</p>
+        <dl class="kv">
+          <dt>Banco</dt><dd>Oracle Database Free (23ai), banco <code>FREEPDB1</code></dd>
+          <dt>Porta</dt><dd><code>1521</code></dd>
+          <dt>1º boot</dt><dd>Roda os 11 scripts de <code>oracle-init</code> e cria as contas da API e do engenheiro a partir do <code>.env</code>. Leva de 1 a 3+ minutos.</dd>
+          <dt>Saúde</dt><dd>O compose roda o <code>healthcheck.sh</code> da imagem a cada 10 s, com 30 s de carência, e marca o container como <code>unhealthy</code> após 18 falhas seguidas. Política de reinício: <code>unless-stopped</code>.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3>kawashi-vault</h3>
+        <p class="where">hashicorp/vault:1.15.6</p>
+        <dl class="kv">
+          <dt>Versão</dt><dd>Fixa. A 1.16+ trava no Docker Desktop do Windows.</dd>
+          <dt>Porta</dt><dd><code>8200</code></dd>
+          <dt>Modo</dt><dd>Dev: tudo em memória, token raiz vem do <code>.env</code>. Perde tudo a cada recriação.</dd>
+          <dt>Guarda</dt><dd>Senha temporária de cada pessoa nova e o login pessoal dela. Engine <code>kawashi-secrets</code> (KV v2) e login <code>userpass</code>.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3>Configuração</h3>
+        <p class="where">infra/.env (fora do git)</p>
+        <ul>
+          <li>6 variáveis, modelo em <code>.env.example</code></li>
+          <li>Senha do <code>SYS</code>/<code>SYSTEM</code></li>
+          <li>Conta da API (usuário e senha)</li>
+          <li>Conta do engenheiro (usuário e senha)</li>
+          <li>Token raiz do Vault</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Como subir</h3>
+    <ol class="steps">
+      <li><div>Copie <code>infra/.env.example</code> para <code>infra/.env</code> e preencha com senhas fortes<small>Sem <code>$</code> nem <code>#</code> nos valores.</small></div></li>
+      <li><div><code>docker compose up</code> dentro de <code>infra/</code><small>Espere o container <code>kawashi-oracle</code> ficar <code>healthy</code>.</small></div></li>
+      <li><div>Troque a senha do engenheiro e grave a nova em <code>ENGINEER_USER_PASSWORD</code>, no <code>.env</code><small>A conta nasce com a senha expirada de propósito (<code>08_engineer_account.sql</code>). Conectado como administrador, rode <code>ALTER USER</code> com uma senha diferente da inicial. Sem isso, os passos seguintes e a suíte falham com <code>ORA-28001</code>.</small></div></li>
+      <li><div><code>infra/scripts/verify-environment.ps1</code><small>Mostra objetos <code>KAWASHI_*</code> inválidos do schema <code>SYS</code> e os 2 jobs de manutenção, para você conferir à mão.</small></div></li>
+      <li><div><code>infra/scripts/vault-init.ps1</code><small>Liga o engine de segredos e o login por usuário e senha.</small></div></li>
+      <li><div><code>infra/scripts/create-team-member.ps1</code><small>Dá acesso a uma pessoa.</small></div></li>
+      <li><div><code>infra/tests/Run-AllTests.ps1</code><small>Opcional, recomendado: roda a suíte inteira.</small></div></li>
+    </ol>
+
+    <div class="callouts">
+      <div class="callout"><b>Os SQL rodam uma vez</b>Os scripts de <code>oracle-init</code> só executam no primeiro boot. Mudou um arquivo? É preciso recriar o banco do zero com <code>docker compose down -v</code>.</div>
+      <div class="callout"><b>Vault recriado, Vault vazio</b>Toda vez que o container do Vault é recriado, rode <code>vault-init.ps1</code> de novo.</div>
+      <div class="callout"><b>Engenheiro nasce com senha expirada</b>Vale já no primeiro boot e toda vez que o banco é recriado. É de propósito, no <code>08_engineer_account.sql</code>. Sem trocar a senha e atualizar o <code>.env</code>, a verificação, o onboarding e a suíte falham com <code>ORA-28001</code>.</div>
+    </div>
+  </section>
+
+  <section id="oracle" class="section">
+    <span class="section-tag">Regras do banco</span>
+    <h2>Seis camadas de defesa, em 11 scripts</h2>
+    <p class="desc">
+      As regras do banco são código SQL em <code>infra/oracle-init/</code>, numerado na ordem em que roda. A entrada de pessoas (proxy e roles permitidas) fica nos scripts PowerShell de <code>infra/scripts</code>.
+      Cada camada abaixo diz em quais scripts mora.
+    </p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>Senha e sessão</h3>
+        <p class="where">02</p>
+        <ul>
+          <li>Senha com 12+ caracteres, maiúscula, minúscula, número e símbolo, sem o nome do usuário</li>
+          <li>5 erros seguidos travam a conta por 1 hora</li>
+          <li>Senha de pessoa expira em 90 dias e não volta para a anterior</li>
+          <li>Pessoa: 3 sessões, ociosa por 30 min cai. API: perfil próprio com 50 sessões</li>
+          <li><code>RESOURCE_LIMIT</code> ligado, sem isso o Oracle ignora os limites de sessão</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Auditoria e trilha própria</h3>
+        <p class="where">02 · 03 · 04 · 05 · 07 · 10</p>
+        <ul>
+          <li>Auditoria nativa do Oracle para usuários, <code>GRANT</code>/<code>REVOKE</code>, logon e logoff</li>
+          <li>Trilha própria <code>KAWASHI_SECURITY_LOG</code>, alimentada por 4 triggers: logon, logoff, DDL e escalonamento de privilégio</li>
+          <li>Se o log falhar, grava num fallback e nunca trava quem está trabalhando</li>
+          <li>Purga automática de registros com mais de 90 dias</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Regras de logon</h3>
+        <p class="where">05 · 03</p>
+        <ul>
+          <li>Lista de IPs e janela de horário: hoje só registram, sem bloquear (dev)</li>
+          <li>Ferramentas bloqueadas: Python, Toad, sqlmap e Excel</li>
+          <li>Contas de SO inseguras (<code>root</code>, <code>administrator</code>, <code>guest</code>) são barradas</li>
+          <li>IPs e ferramentas ficam em tabelas: mudar a regra é um <code>INSERT</code>, não editar PL/SQL</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Superfície de ataque</h3>
+        <p class="where">10 · 06</p>
+        <ul>
+          <li><code>EXECUTE</code> revogado de <code>PUBLIC</code> em <code>UTL_HTTP</code>, <code>UTL_TCP</code>, <code>UTL_SMTP</code>, <code>UTL_INADDR</code>, <code>UTL_FILE</code> e <code>DBMS_JAVA</code></li>
+          <li>Limite de 3 tentativas também na camada de protocolo</li>
+          <li>Contas de demonstração do Oracle trancadas, quando existem</li>
+          <li><code>DROP PLUGGABLE DATABASE</code> é recusado pelo próprio Oracle, até para o engenheiro (confirmado por teste, não é regra dos scripts)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Privilégio mínimo</h3>
+        <p class="where">01 · 06 · 08 · 09 · onboarding</p>
+        <ul>
+          <li>5 roles com privilégios exatos, conferidos por teste: <code>DEVELOPER</code>, <code>INFRA</code>, <code>HOMOLOG_VIEWER</code>, <code>READWRITE</code>, <code>READONLY</code></li>
+          <li>Conta da API: perfil de serviço, cota só na tablespace dela, sem <code>UNLIMITED TABLESPACE</code></li>
+          <li>O onboarding (<code>create-team-member.ps1</code>) só aceita as roles da Kawashi e recusa as perigosas, como <code>DBA</code></li>
+          <li>Engenheiro com <code>DBA</code>: dívida declarada, reduzir quando houver mais gente operando</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Ambientes e acesso</h3>
+        <p class="where">09</p>
+        <ul>
+          <li>6 schemas de ambiente, cada um com tablespace própria e tamanho máximo</li>
+          <li>Schemas sem senha (<code>NO AUTHENTICATION</code>): ninguém loga neles direto. O acesso é por proxy, concedido pelo onboarding</li>
+          <li>12 schemas de serviço (<code>SEFAZ</code> e <code>SIMPLES_NACIONAL</code> em cada ambiente), com acesso à parte e explícito</li>
+          <li>Trigger libera leitura das tabelas e views novas do schema padrão de Homologação para a role de visualização (os schemas de serviço ainda não têm isso)</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Os 11 scripts, na ordem em que rodam</h3>
+    <div class="table-frame">
+      <table>
+        <thead><tr><th>Script</th><th>O que faz</th></tr></thead>
+        <tbody>
+          <tr><td>01_setup_kawashi</td><td>Tablespaces de dados e de logs do SIEM; roles <code>DEVELOPER</code> e <code>INFRA</code></td></tr>
+          <tr><td>02_global_hardening</td><td>Função de senha, perfis de pessoa e de serviço, auditoria nativa, <code>RESOURCE_LIMIT</code></td></tr>
+          <tr><td>03_dynamic_tables</td><td>As 4 tabelas de controle: IPs, ferramentas, log e fallback</td></tr>
+          <tr><td>04_security_procedures</td><td>Procedure que grava no log sem nunca travar quem a chamou</td></tr>
+          <tr><td>05_context_triggers</td><td>Triggers de logon, logoff, DDL e escalonamento de privilégio</td></tr>
+          <tr><td>06_access_management</td><td>Roles <code>READONLY</code>/<code>READWRITE</code>, endurecimento da conta da API, contas de demonstração trancadas</td></tr>
+          <tr><td>07_maintenance_jobs</td><td>2 jobs: manutenção diária às 02:00 e reconstrução semanal de índices (domingo, 03:00)</td></tr>
+          <tr><td>08_engineer_account</td><td>Conta pessoal do engenheiro, com <code>DBA</code>, separada do <code>SYS</code></td></tr>
+          <tr><td>09_environments</td><td>6 ambientes (schemas sem senha, cada um com tablespace), 12 schemas de serviço, role de visualização e auto-grant em Homologação. O proxy é concedido depois, pelo onboarding</td></tr>
+          <tr><td>10_advanced_hardening</td><td>Limite no protocolo, purga da auditoria, <code>EXECUTE</code> revogado de <code>PUBLIC</code></td></tr>
+          <tr><td>11_fixture_contrato_segmentacao</td><td>Fixture mínima para os testes: <code>CLIENTE</code> e <code>SEFAZ.CONFIGURACAO_FISCAL</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Inventário conferido por teste (golden snapshot): os objetos de segurança com prefixo <code>KAWASHI</code> são exatamente estes, nem mais nem menos.</p>
+    <div class="inv">
+      <span><b>5</b> triggers</span>
+      <span><b>5</b> roles</span>
+      <span><b>2</b> perfis</span>
+      <span><b>2</b> procedures/funções</span>
+      <span><b>3</b> jobs agendados</span>
+      <span><b>4</b> tabelas de controle</span>
+    </div>
+  </section>
+
+  <section id="ambientes" class="section">
+    <span class="section-tag">Ciclo de vida</span>
+    <h2>6 ambientes, 5 perfis e a conta do engenheiro</h2>
+    <p class="desc">
+      A pessoa entra com a própria conta e passa a atuar como o schema do ambiente liberado para
+      o perfil dela. Produção só é alcançada manualmente, pelo engenheiro.
+    </p>
+
+    <div class="diagram-frame">
+      <pre class="mermaid">
+flowchart LR
+    subgraph P["Perfis e conta do engenheiro"]
+        ED["EstagiarioDev"]
+        EI["EstagiarioInfra"]
+        DV["Desenvolvedor"]
+        IF["Infra"]
+        QA["HomologViewer"]
+        EN["Engenheiro · DBA"]
+    end
+    subgraph A["Ambientes KAWASHI_ENV_*"]
+        TD[("TESTE_DEV")]
+        TI[("TESTE_INFRA")]
+        DE[("DEV")]
+        IN[("INFRA")]
+        HO[("HOMOLOG")]
+        PR[("PROD")]
+    end
+    ED -- proxy --> TD
+    EI -- proxy --> TI
+    DV -- proxy --> DE
+    DV -- proxy --> HO
+    IF -- proxy --> IN
+    IF -- proxy --> HO
+    QA -- SELECT --> HO
+    EN -- "manual, 1x/mês" --> PR
+    TD -. "promoção (PR)" .-> DE
+    TI -. "promoção (PR)" .-> IN
+    DE -. promoção .-> HO
+    IN -. promoção .-> HO
+    HO -. "promoção curada" .-> PR
+      </pre>
+    </div>
+    <p class="note">
+      As setas pontilhadas são o <strong>ciclo de vida</strong> de uma mudança (commit, pull request
+      revisado, decisão de promover). Nenhuma tabela é copiada sozinha entre ambientes.
+      O isolamento é lógico: os 6 ambientes rodam na mesma instância Oracle.
+    </p>
+
+    <div class="table-frame">
+      <table>
+        <thead><tr><th>Perfil ou conta</th><th>Ambiente(s)</th><th>Como entra</th></tr></thead>
+        <tbody>
+          <tr><td>EstagiarioDev</td><td>Teste-Dev</td><td>Proxy</td></tr>
+          <tr><td>EstagiarioInfra</td><td>Teste-Infra</td><td>Proxy</td></tr>
+          <tr><td>Desenvolvedor</td><td>Desenvolvimento e Homologação</td><td>Proxy</td></tr>
+          <tr><td>Infra</td><td>Infra e Homologação</td><td>Proxy</td></tr>
+          <tr><td>HomologViewer</td><td>Homologação, somente leitura</td><td>Role de <code>SELECT</code>, sem proxy</td></tr>
+          <tr><td>Engenheiro</td><td>Todos, inclusive Produção</td><td>Conta própria com <code>DBA</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      Cada ambiente tem tablespace própria, que começa com 50 MB e cresce sozinha até 1 GB (Produção: começa com 100 MB, teto de 2 GB).
+      O ambiente de teste é separado por equipe porque, dentro do mesmo ambiente, qualquer pessoa
+      pode apagar o que outra criou (achado 16).
+    </p>
+  </section>
+
+  <section id="tabelas" class="section">
+    <span class="section-tag">Tabelas</span>
+    <h2>4 tabelas de controle e uma fixture de 2</h2>
+    <p class="desc">
+      Este repositório só tem tabelas que servem às regras. As quatro de controle são do dono
+      <code>SYS</code>. A fixture existe para os testes terem o que exercitar.
+    </p>
+
+    <div class="table-frame">
+      <table>
+        <thead><tr><th>Tabela</th><th>Para quê</th><th>Quem usa</th></tr></thead>
+        <tbody>
+          <tr><td>KAWASHI_ALLOWED_IPS</td><td>Lista de IPs autorizados a conectar</td><td>Trigger de logon lê</td></tr>
+          <tr><td>KAWASHI_FORBIDDEN_TOOLS</td><td>Padrões de ferramentas cliente proibidas</td><td>Trigger de logon lê</td></tr>
+          <tr><td>KAWASHI_SECURITY_LOG</td><td>Trilha de auditoria: logins, logoffs, DDL, concessões, bloqueios</td><td>Os 4 triggers gravam, via procedure</td></tr>
+          <tr><td>KAWASHI_SECURITY_LOG_FALLBACK</td><td>Registra a falha quando o log principal não consegue gravar</td><td>A procedure grava, só em caso de falha</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>O padrão que a fixture prova: tabela padrão e schema de serviço</h3>
+    <div class="diagram-frame">
+      <pre class="mermaid">
+flowchart TB
+    subgraph PADRAO["KAWASHI_ENV_DEV · padrão"]
+        CLIENTE["CLIENTE&lt;br/&gt;id · cnpj · razao_social"]
+    end
+    subgraph SEFAZ["KAWASHI_ENV_DEV_SEFAZ · serviço"]
+        CONFIG["CONFIGURACAO_FISCAL&lt;br/&gt;id · cliente_id · regime_tributario"]
+    end
+    subgraph SIMPLES["KAWASHI_ENV_DEV_SIMPLES_NACIONAL · serviço"]
+        VAZIO["vazio, ainda sem grant sobre o padrão"]
+    end
+    CONFIG -- "FK + SELECT" --> CLIENTE
+    DEV1["Desenvolvedor, qualquer um"] -- proxy --> PADRAO
+    DEV2["Desenvolvedor com -Servicos SEFAZ"] -- proxy --> SEFAZ
+      </pre>
+    </div>
+    <div class="cards">
+      <div class="card flat"><h3>FK só de ida</h3><ul><li>O serviço referencia o padrão. O padrão nunca referencia serviço nenhum.</li><li>Garantido por teste automatizado em todos os 6 ambientes.</li></ul></div>
+      <div class="card flat"><h3>REFERENCES não dá leitura</h3><ul><li>Na fixture, o schema <code>SEFAZ</code> (em <code>TESTE_DEV</code> e <code>DEV</code>) recebe <code>REFERENCES</code> e <code>SELECT</code> em concessões separadas.</li><li>Sem o <code>SELECT</code>, o <code>JOIN</code> falhava com <code>ORA-41900</code>.</li></ul></div>
+      <div class="card flat"><h3>Serviço é concessão explícita</h3><ul><li>Sem <code>-Servicos</code>, o perfil só enxerga o padrão.</li><li>Ter SEFAZ não dá Simples Nacional.</li></ul></div>
+      <div class="card flat"><h3>Só em TESTE_DEV e DEV</h3><ul><li>Os outros 4 ambientes têm os schemas de serviço, vazios.</li><li>Sincronizar estrutura entre ambientes ainda não existe.</li></ul></div>
+    </div>
+  </section>
+
+  <section id="scripts" class="section">
+    <span class="section-tag">Operação</span>
+    <h2>4 scripts PowerShell cobrem o dia a dia</h2>
+    <p class="desc">
+      Ficam em <code>infra/scripts/</code>. Cada um é independente, sem biblioteca compartilhada.
+    </p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>create-team-member.ps1</h3>
+        <p class="where">-Username -Profile [-Roles] [-Servicos]</p>
+        <ul>
+          <li>Cria o usuário Oracle com senha temporária aleatória</li>
+          <li>Concede o acesso do perfil e, se pedido, os serviços</li>
+          <li>Cria o login pessoal e a policy da pessoa no Vault</li>
+          <li>A senha só serve para o 1º login</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>grant-service-access.ps1</h3>
+        <p class="where">-Username -Servicos</p>
+        <ul>
+          <li>Dá um serviço a quem já tem conta, sem recriar o usuário</li>
+          <li>Descobre sozinho os ambientes da pessoa, lendo <code>DBA_PROXIES</code></li>
+          <li>Rodar duas vezes não dá erro</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>vault-init.ps1</h3>
+        <p class="where">nenhum obrigatório</p>
+        <ul>
+          <li>Liga o engine <code>kawashi-secrets</code> e o login <code>userpass</code></li>
+          <li>Rodar sempre que o container do Vault for recriado</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>verify-environment.ps1</h3>
+        <p class="where">nenhum obrigatório</p>
+        <ul>
+          <li>Lista objetos <code>KAWASHI_*</code> inválidos do schema <code>SYS</code></li>
+          <li>Mostra se os 2 jobs de manutenção existem e estão ativos</li>
+          <li>Só imprime: a conferência é manual</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:14px">Todos os quatro aceitam <code>-EnvFile</code> para apontar outro arquivo de configuração (padrão: <code>infra/.env</code>).</p>
+
+    <h3>Como uma pessoa nova recebe acesso, sem senha passando por chat</h3>
+    <ol class="steps">
+      <li><div>O engenheiro roda <code>create-team-member.ps1</code><small>Oracle cria o usuário; o Vault guarda a senha temporária em <code>onboarding/&lt;usuário&gt;</code>.</small></div></li>
+      <li><div>O engenheiro passa à pessoa só o login do Vault e a senha temporária do Vault<small>Por canal privado. A senha do Oracle nunca aparece para ele.</small></div></li>
+      <li><div>A pessoa entra no Vault e lê a senha temporária do Oracle</div></li>
+      <li><div>Ao conectar no Oracle, ele recusa e força a escolha de uma senha nova<small>Só ela sabe o valor definitivo.</small></div></li>
+      <li><div>A pessoa guarda a senha definitiva em <code>engineers/&lt;usuário&gt;</code> e apaga o segredo temporário<small>Passo manual e voluntário: o Oracle não avisa ninguém quando alguém troca a própria senha.</small></div></li>
+    </ol>
+  </section>
+
+  <section id="testes" class="section">
+    <span class="section-tag">Prova</span>
+    <h2>247 casos em 35 arquivos, contra Oracle e Vault reais</h2>
+    <p class="desc">
+      Nada de mock. Cada teste cria os próprios dados descartáveis e limpa tudo no final, mesmo se falhar
+      no meio. Rodar um teste sozinho ou todos dá o mesmo resultado.
+    </p>
+
+    <div class="bar" role="img" aria-label="Distribuição dos 247 casos: 6 unitários, 60 caixa-branca, 166 caixa-preta, 15 outros">
+      <i style="flex:6;background:var(--c4)"></i>
+      <i style="flex:60;background:var(--c2)"></i>
+      <i style="flex:166;background:var(--c1)"></i>
+      <i style="flex:15;background:var(--c3)"></i>
+    </div>
+    <div class="legend">
+      <div class="lg">
+        <h3><i style="background:var(--c4)"></i>Unitários</h3>
+        <p class="n">1 arquivo · 6 casos</p>
+        <p>Uma função isolada, a de verificação de senha, chamada direto.</p>
+      </div>
+      <div class="lg">
+        <h3><i style="background:var(--c2)"></i>Caixa-branca</h3>
+        <p class="n">11 arquivos · 60 casos</p>
+        <p>Olha por dentro: parâmetros do perfil, privilégios exatos de cada role, triggers, jobs, trilha de auditoria e o inventário do banco.</p>
+      </div>
+      <div class="lg">
+        <h3><i style="background:var(--c1)"></i>Caixa-preta</h3>
+        <p class="n">20 arquivos · 166 casos</p>
+        <p>Olha de fora: quem consegue entrar, onde, e o que pode fazer. Só importa a resposta do login e do SQL.</p>
+      </div>
+      <div class="lg">
+        <h3><i style="background:var(--c3)"></i>Integração</h3>
+        <p class="n">3 arquivos · 15 casos</p>
+        <p>Onboarding completo em Oracle e Vault juntos, e a conta da API de ponta a ponta.</p>
+      </div>
+    </div>
+
+    <h3>Exemplos do que a suíte garante</h3>
+    <div class="cards">
+      <div class="card flat"><ul>
+        <li>5 senhas erradas seguidas travam a conta, mesmo com a senha certa depois</li>
+        <li>Voltar para a senha anterior é recusado</li>
+        <li>Onboarding recusa <code>DBA</code> e outras roles perigosas</li>
+      </ul></div>
+      <div class="card flat"><ul>
+        <li>Cada perfil alcança só os ambientes dele, em uma matriz perfil por ambiente</li>
+        <li>Quem não tem <code>-Servicos</code> não entra no schema de serviço</li>
+        <li>A FK nunca aponta do padrão para o serviço</li>
+      </ul></div>
+      <div class="card flat"><ul>
+        <li>Login, logoff, DDL e <code>GRANT</code> aparecem na trilha de auditoria</li>
+        <li>Falha forçada do log cai no fallback sem travar ninguém</li>
+        <li>3 onboardings ao mesmo tempo não se contaminam</li>
+      </ul></div>
+    </div>
+
+    <h3>Como rodar</h3>
+    <pre class="cmd"># tudo
+./infra/tests/Run-AllTests.ps1
+
+# só uma categoria
+./infra/tests/Run-AllTests.ps1 -Categoria caixa-preta
+
+# um teste específico
+./infra/tests/caixa-preta/Test-MatrizAcessoPorPerfil.ps1</pre>
+    <p class="note">Última rodada completa: 27/10/2026, banco recriado do zero, <strong>247 passaram, 0 falharam</strong>, em 249 segundos.</p>
+  </section>
+
+  <section id="achados" class="section">
+    <span class="section-tag">Achados</span>
+    <h2>20 itens no log: 15 bugs corrigidos e 5 achados</h2>
+    <p class="desc">
+      Quase tudo isso só apareceu rodando de verdade, nunca lendo o código. O registro completo, com
+      sintoma, causa e correção, está em <code>infra/docs/bugs-primeiro-teste.md</code>. Estes são seis
+      deles, entre os de maior peso para auditoria e controle de acesso (11 e 15).
+    </p>
+    <div class="cards">
+      <div class="find"><span class="no">achado 11 · bug</span><h3>A trilha de auditoria própria nunca gravou uma linha</h3><p>Desde o primeiro boot. Só a suíte automatizada percebeu.</p></div>
+      <div class="find"><span class="no">achado 15 · bug</span><h3>O onboarding aceitava qualquer role, inclusive DBA</h3><p>O parâmetro <code>-Roles</code> não tinha nenhuma resistência. Corrigido.</p></div>
+      <div class="find"><span class="no">achado 10 · bug</span><h3>Onboarding "falho" podia dar acesso a uma conta existente</h3><p>Uma tentativa que reportava erro ainda concedia o acesso. Corrigido.</p></div>
+      <div class="find"><span class="no arq">achado 16 · arquitetura</span><h3>No mesmo ambiente, qualquer um apaga o que outro criou</h3><p>A posse é do schema compartilhado, não da pessoa. Motivou separar o teste por equipe e criar os schemas de serviço.</p></div>
+      <div class="find"><span class="no">achado 17 · bug</span><h3><code>REFERENCES</code> habilita a FK, mas não dá leitura</h3><p>O primeiro <code>JOIN</code> entre serviço e padrão falhava até o <code>SELECT</code> ser concedido à parte.</p></div>
+      <div class="find"><span class="no arq">achado 19 · metodologia</span><h3><code>DBA_PROXIES</code> grava <code>CLIENT</code> e <code>PROXY</code> ao contrário do nome</h3><p>Uma consulta com a intuição errada sempre volta vazia, mesmo com o proxy funcionando.</p></div>
+    </div>
+  </section>
+
+  <section id="arquivos" class="section">
+    <span class="section-tag">Mapa</span>
+    <h2>Onde fica cada coisa</h2>
+    <p class="desc">Tudo de infraestrutura está sob <code>infra/</code>.</p>
+<pre class="tree">regras-banco-usp/
+├─ README.md                      <em>visão geral, roadmap, dívidas técnicas</em>
+└─ infra/
+   ├─ docker-compose.yml          <em>Oracle + Vault na rede kawashi-net</em>
+   ├─ .env.example                <em>6 variáveis (o .env real fica fora do git)</em>
+   ├─ oracle-init/                <em>11 scripts SQL, rodam 1x no primeiro boot</em>
+   ├─ oracle-network-config/      <em>trechos sqlnet.ora.append e listener.ora.append, aplicação manual</em>
+   ├─ scripts/                    <em>4 scripts PowerShell</em>
+   ├─ docs/                       <em>5 documentos</em>
+   │  ├─ arquitetura.md           <em>diagramas e o porquê de cada peça</em>
+   │  ├─ bugs-primeiro-teste.md   <em>os 20 achados, com sintoma, causa e correção</em>
+   │  ├─ criar-novo-usuario.md    <em>guia de quem dá o acesso</em>
+   │  ├─ onboarding-novo-membro.md <em>guia de quem recebe o acesso</em>
+   │  └─ hardening-rede.md        <em>passo a passo do hardening de rede</em>
+   └─ tests/                      <em>35 arquivos de teste, 247 casos</em>
+      ├─ Run-AllTests.ps1
+      ├─ lib/TestHelpers.ps1
+      ├─ unitarios/  caixa-branca/  caixa-preta/  outros/</pre>
+    <p class="note">
+      O hardening de rede (criptografia em trânsito e travar a reconfiguração remota do listener) está
+      pronto, mas não roda sozinho de propósito: é mudança em arquivo de rede do Oracle, e um erro ali
+      derruba o listener inteiro.
+    </p>
+  </section>
+
+  <section id="pendencias" class="section">
+    <span class="section-tag">Onde estamos</span>
+    <h2>Roadmap, dívidas e decisões em aberto</h2>
+    <p class="desc">
+      Das 24 frentes do roadmap, 1 está pronta, 5 estão parciais e 18 ainda não começaram.
+    </p>
+    <div class="key">
+      <span class="chip ok">pronto</span>
+      <span class="chip part">parcial</span>
+      <span class="chip">pendente</span>
+    </div>
+
+    <div class="road">
+      <div class="road-row"><h3>Banco de dados<small>O Bunker</small></h3><div class="chips">
+        <span class="chip part">6 bases (isolamento lógico)</span><span class="chip part">Segmentação por serviço</span>
+        <span class="chip">TDE</span><span class="chip">Data Redaction</span><span class="chip">VPD</span><span class="chip">Confidential Computing</span></div></div>
+      <div class="road-row"><h3>Identidade e acesso<small>As Chaves</small></h3><div class="chips">
+        <span class="chip ok">RBAC</span><span class="chip part">Vault (secret management)</span>
+        <span class="chip">Credenciais dinâmicas</span><span class="chip">Zero Trust e MFA</span></div></div>
+      <div class="road-row"><h3>Processo e governança<small>O Gatekeeper</small></h3><div class="chips">
+        <span class="chip">Main protection</span><span class="chip">SQL linter no CI/CD</span><span class="chip">Deploy automatizado</span></div></div>
+      <div class="road-row"><h3>Monitoramento<small>O SIEM</small></h3><div class="chips">
+        <span class="chip part">Audit de DDL</span><span class="chip part">UBA</span>
+        <span class="chip">Honeytables</span><span class="chip">SQL watermarking</span><span class="chip">WORM logs</span></div></div>
+      <div class="road-row"><h3>Resposta e resiliência<small>O Escudo Ativo</small></h3><div class="chips">
+        <span class="chip">Database firewall</span><span class="chip">Rate limiting</span><span class="chip">SOAR</span><span class="chip">Kill switch</span><span class="chip">Backup health check</span></div></div>
+      <div class="road-row"><h3>Avançado<small>The Future</small></h3><div class="chips">
+        <span class="chip">Criptografia homomórfica</span></div></div>
+    </div>
+
+    <h3>Dívidas técnicas declaradas</h3>
+    <div class="cards">
+      <div class="card flat"><ul>
+        <li><strong>Lista de IPs em fail-open.</strong> Só registra. Antes de bloquear, cadastrar o IP de todo mundo, inclusive o do engenheiro.</li>
+        <li><strong>Sem backup.</strong> Sem volume nomeado: <code>docker compose down -v</code> apaga os dados e a trilha de auditoria.</li>
+      </ul></div>
+      <div class="card flat"><ul>
+        <li><strong>Vault em modo dev.</strong> Memória, sem persistência. <code>mlock</code> desligado por limitação do Docker Desktop.</li>
+        <li><strong>Engenheiro com <code>DBA</code>.</strong> Decisão consciente enquanto o desenvolvimento é solo.</li>
+      </ul></div>
+      <div class="card flat"><ul>
+        <li><strong>Isolamento só lógico.</strong> Os 6 ambientes dividem a mesma instância Oracle.</li>
+        <li><strong>Hardening de rede não aplicado.</strong> Pronto em <code>oracle-network-config/</code>, aplicação manual.</li>
+      </ul></div>
+    </div>
+
+    <h3>Decisões em aberto depois da separação</h3>
+    <div class="cards">
+      <div class="card flat"><h3>Como aplicar o repositório de tabelas</h3><ul><li>As regras sobem primeiro, as tabelas depois.</li><li>Script depois do bootstrap ou submódulo. Precisa de teste ao vivo.</li></ul></div>
+      <div class="card flat"><h3>Onde mora "serviço lê todo o padrão"</h3><ul><li>Hoje é um <code>GRANT SELECT</code> em loop que roda uma vez, no 1º boot.</li><li>Não alcança tabelas padrão criadas depois.</li></ul></div>
+      <div class="card flat"><h3>Conta de API por ambiente</h3><ul><li>Hoje existe uma só conta de API, sem ligação com os 6 ambientes.</li><li>Falta o equivalente do onboarding de pessoas, para contas de API.</li></ul></div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    Conferido em 27/10/2026 contra o repositório <code>regras-banco-usp</code>, no commit
+    <code>a57ce0b</code> (separação entre regras e tabelas já aplicada). Os números de teste vêm de uma
+    execução completa do <code>Run-AllTests.ps1</code> com o mesmo código, feita pouco antes do commit.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    try {
+      var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+      var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+      if (!('IntersectionObserver' in window)) return;
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          var idx = sections.indexOf(entry.target);
+          if (idx === -1) return;
+          links.forEach(function (l) { l.classList.remove('active'); });
+          links[idx].classList.add('active');
+        });
+      }, { rootMargin: '-45% 0px -50% 0px' });
+      sections.forEach(function (s) { if (s) io.observe(s); });
+    } catch (e) { /* o destaque do menu é só um agrado, a página funciona sem ele */ }
+  })();
+</script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.0/dist/mermaid.esm.min.mjs";
+  var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: true, securityLevel: "strict", theme: dark ? "dark" : "default" });
+</script>
+</body>
+</html>

@@ -249,6 +249,8 @@ sequenceDiagram
 
 ## Documentos relacionados
 
+- [`resumo-visual.html`](resumo-visual.html) — resumo de uma página do repositório inteiro (abrir no
+  navegador).
 - [`criar-novo-usuario.md`](criar-novo-usuario.md) — guia do administrador para criar acesso.
 - [`onboarding-novo-membro.md`](onboarding-novo-membro.md) — guia de quem está recebendo acesso.
 - [`../oracle-init/09_environments.sql`](../oracle-init/09_environments.sql) — implementação

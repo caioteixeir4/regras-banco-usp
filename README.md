@@ -1,14 +1,16 @@
-# Kawashi Sistemas - Infrastructure & SIEM Fortress 🏯
+# regras-banco-usp 🏯
 
-Este repositório contém a infraestrutura de segurança e o sistema de monitoramento (SIEM)
-focado em banco de dados para a Kawashi Sistemas.
+Regras de segurança do banco de dados Oracle da Kawashi Sistemas: hardening, ambientes, RBAC por
+proxy, auditoria (SIEM) e Vault, provados por testes automatizados. Projeto da pós-graduação na
+USP. Este é um dos repositórios que orquestram o banco; as tabelas de negócio e a API do banco
+ficam em `tabelas-api-banco-usp`.
 
 ## 🧭 Escopo deste repositório
 
 Aqui ficam as **regras do banco de dados** da Kawashi: hardening, ambientes de ciclo de vida,
 RBAC por proxy, auditoria/SIEM, onboarding via Vault e a suíte de testes que prova tudo isso.
 Este repositório **não** é o lugar das tabelas de negócio nem da API do banco — esses vão viver
-em um repositório separado (ainda a criar), que roda sobre as regras daqui.
+no repositório `tabelas-api-banco-usp`, que roda sobre as regras daqui.
 
 - **Tabelas que ficam aqui** (só as essenciais): as 4 de controle de segurança em
   [`03_dynamic_tables.sql`](infra/oracle-init/03_dynamic_tables.sql) (`KAWASHI_ALLOWED_IPS`,
@@ -16,7 +18,7 @@ em um repositório separado (ainda a criar), que roda sobre as regras daqui.
   duas tabelas (`CLIENTE` e `SEFAZ.CONFIGURACAO_FISCAL`, só em `TESTE_DEV`/`DEV`) em
   [`11_fixture_contrato_segmentacao.sql`](infra/oracle-init/11_fixture_contrato_segmentacao.sql),
   pra os testes de contrato terem o que exercitar.
-- **O que vai pro repositório de tabelas:** as tabelas padrão completas (`ENDERECO`, `EMPRESA`,
+- **O que vai pro `tabelas-api-banco-usp`:** as tabelas padrão completas (`ENDERECO`, `EMPRESA`,
   `FILIAL`, `CONTATO`, `SOCIO`...), os schemas de plataforma (`ORGANIZACOES`, `LOGIN`,
   `ADMINISTRACAO`) e a API do banco.
 - **Nada foi descartado.** A tag git `dominio-completo-pre-separacao` (commit `cadb773`) guarda o
@@ -31,6 +33,10 @@ em um repositório separado (ainda a criar), que roda sobre as regras daqui.
 O projeto utiliza um modelo de defesa em camadas (Defense in Depth) para proteger
 ativos de dados críticos. Para diagramas (containers/rede, ambientes de ciclo de vida e o
 fluxo de onboarding via Vault), veja [`infra/docs/arquitetura.md`](infra/docs/arquitetura.md).
+
+Para um resumo visual de uma página (Docker, Oracle, regras, ambientes, tabelas, scripts, testes e
+pendências), abra [`infra/docs/resumo-visual.html`](infra/docs/resumo-visual.html) no navegador. Os
+diagramas carregam o Mermaid pela internet.
 
 ## ▶️ Como subir o ambiente (primeira vez)
 
