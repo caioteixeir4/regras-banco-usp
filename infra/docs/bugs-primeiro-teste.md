@@ -7,7 +7,7 @@ teria pego — só rodando de verdade. Este documento registra cada um: o sintom
 e a correção, para servir de referência caso algo parecido apareça de novo (ou para explicar,
 numa apresentação/defesa, que o projeto foi validado na prática, não só no papel).
 
-Mais problemas (itens 8 a 20 abaixo) apareceram depois, em rodadas seguintes de testes —
+Mais problemas (itens 8 a 21 abaixo) apareceram depois, em rodadas seguintes de testes —
 desta vez escrevendo e expandindo a suíte automatizada em `infra/tests/` (ver
 `infra/tests/README.md`) em vez de testar na mão. Os itens 11 e 12 são os mais graves em termos de
 auditoria (a trilha de segurança própria nunca tinha gravado uma única linha de verdade, desde o
@@ -17,7 +17,8 @@ apareceu implementando a segmentação por serviço descrita em `infra/tests/REA
 o item 18 é um teste preventivo (não um bug encontrado), escrito a pedido do usuário para garantir
 que o problema do item 17 nunca aconteça no sentido inverso (padrão referenciando serviço); o
 item 20 é uma decisão de arquitetura (separar este repositório de regras do repositório de
-tabelas), registrada junto porque mexeu em arquivos, testes e contagens documentados acima.
+tabelas), registrada junto porque mexeu em arquivos, testes e contagens documentados acima; o
+item 21 é a decisão de como a API entra no banco (conta de serviço por proxy).
 
 ## 1. `SEC_MAX_FAILED_LOGIN_ATTEMPTS` setado no PDB errado
 
@@ -564,8 +565,295 @@ o usuário do **site**, outro conceito.
    `11`, que roda uma vez e não alcança tabelas padrão criadas depois (consequência direta do
    achado do item 17). Pode virar uma procedure de regra exposta aqui e chamada pelo repositório
    de tabelas.
-3. *Conta de API por ambiente.* Só existe uma conta de API (`KAWASHI_SPRING_USER`), sem relação
-   com os 6 ambientes; ver o TODO em `09_environments.sql`.
+3. *Conta de API por ambiente.* Só existia uma conta de API (`KAWASHI_SPRING_USER`), sem relação
+   com os 6 ambientes. **Resolvido no item 21.**
+
+## 21. (decisão de arquitetura, não um bug) A API entra no banco por proxy, com uma conta de serviço por ambiente
+
+**Contexto:** o item 20 deixou em aberto como a API (agora no repositório `tabelas-api-banco-usp`)
+se conecta ao Oracle. A única conta de aplicação era a `KAWASHI_SPRING_USER`, criada antes do modelo
+de ambientes, com schema e tablespace próprios, fora dos 6 ambientes.
+
+**Decisão:** a API usa o mesmo caminho das pessoas, com o perfil de serviço. O script
+`infra/scripts/create-api-account.ps1` cria uma conta (`KAWASHI_SERVICE_PROFILE`, só
+`CREATE SESSION`, sem tablespace nem quota) e concede `CONNECT THROUGH` no schema do ambiente. A
+API conecta como `CONTA[KAWASHI_ENV_<AMBIENTE>]` com a senha da própria conta, que fica no Vault em
+`kawashi-secrets/api/<conta>`. Produção fica de fora, igual às pessoas. Uma conta de API não é uma
+pessoa em nada que importa ao Oracle: o pool JDBC precisa de mais de 3 sessões (item 14) e não
+responde ao prompt de senha expirada (item 4), então reaproveitar o `create-team-member.ps1` não
+servia.
+
+**Verificado ao vivo (não era certo de antemão):**
+1. O driver JDBC thin da Oracle aceita a sintaxe de proxy direto no nome do usuário
+   (`CONTA[SCHEMA]`), sem código especial, e o pool HikariCP abre sessões proxyadas normalmente.
+2. O schema corrente da sessão é o do ambiente (`SYS_CONTEXT('USERENV','CURRENT_SCHEMA')`) e o
+   Oracle registra a conta como `PROXY_USER`, então a auditoria continua sabendo quem entrou.
+3. O Flyway da API consegue criar tabelas pela sessão proxyada, e o Hibernate com
+   `ddl-auto=validate` enxerga as tabelas do schema do ambiente.
+
+**Pegadinha repetida:** o primeiro rascunho do teste leu a mensagem de erro do Vault como se fosse a
+senha, porque `-field=$Campo` escrito direto numa chamada nativa do PowerShell não interpola (a
+mesma armadilha do item 6). A correção é montar o argumento antes numa string.
+
+**Teste:** `infra/tests/caixa-preta/Test-ContaApiViaProxy.ps1`, 15 casos (a suíte vai de 247 para
+262).
+
+**Limitação conhecida:** a conta que roda o Flyway tem DDL no schema do ambiente, como qualquer
+proxy desse ambiente (item 16). Separar a conta de migração da conta de execução da API fica para
+depois.
+
+## 22. (decisão de arquitetura, não um bug) Sai a segmentação por serviço de exemplo; entra o schema de log da aplicação
+
+**O que mudou.** Duas coisas, na mesma rodada:
+
+1. **Removidos** os schemas de serviço de exemplo (`KAWASHI_ENV_<AMBIENTE>_SEFAZ` e
+   `_SIMPLES_NACIONAL`, 12 ao todo), a fixture `CLIENTE` + `SEFAZ.CONFIGURACAO_FISCAL`
+   (`11_fixture_contrato_segmentacao.sql`), o parâmetro `-Servicos` de `create-team-member.ps1` e de
+   `create-api-account.ps1`, o script `grant-service-access.ps1` e os três testes que dependiam
+   deles. Motivo: eram só material de teste do padrão "padrão + serviço" (itens 17, 18 e 20), e o
+   modelo de dados real, definido depois, não usa esses serviços. Os itens anteriores que falam
+   deles ficam como histórico do caminho.
+2. **Criado** um schema `KAWASHI_ENV_<AMBIENTE>_LOG` por ambiente (`11_schema_log.sql`) com os logs
+   da API: `LOG_ALTERACAO` (quem mudou qual registro), `LOG_ACESSO` (cada chamada) e a tabela de
+   controle `LOG_CADEIA`.
+
+**Por que as tabelas de log são criadas aqui e não pelo repositório da API.** É a única exceção à
+regra do item 20 ("tabelas de negócio no outro repositório"), e é de propósito: quem é DONO de uma
+tabela sempre consegue alterar e apagar as linhas dela. A API entra no banco como o schema do
+ambiente; se o Flyway dela criasse as tabelas de log, ela seria dona, e "a API só insere no log"
+seria uma promessa do código. Com o dono sendo um schema em que ninguém loga (`NO AUTHENTICATION`,
+sem `CREATE SESSION`, sem proxy) e o schema do ambiente recebendo só `INSERT` e `SELECT`, a regra
+passa a ser uma permissão do banco.
+
+**Encadeamento.** Um trigger `BEFORE INSERT`, que roda como o dono, numera cada linha de
+`LOG_ALTERACAO` sem buraco (`ORDEM`), carimba a hora do servidor e grava
+`HASH = SHA-256(hash da linha anterior + conteúdo)`. O que quem insere mandar nesses campos é
+ignorado. A view `V_LOG_ALTERACAO_QUEBRAS` devolve uma linha por problema (conteúdo alterado, linha
+do meio apagada, linhas do fim apagadas) e fica vazia quando a corrente está inteira.
+
+**Achado ao testar ao vivo.** A recusa de `UPDATE`/`DELETE` aparece com dois códigos, conforme o
+cliente: `ORA-01031` pelo `sqlplus` e `ORA-41900` ("falta o privilégio UPDATE em ...") pelo JDBC do
+Oracle 23. Os testes dos dois repositórios aceitam os dois.
+
+**Limites conhecidos.**
+- Quem tem `DBA` consegue recalcular a corrente inteira. O encadeamento protege contra adulteração
+  parcial e contra a própria aplicação; contra um DBA mal-intencionado a defesa é a trilha de
+  auditoria do banco (`KAWASHI_SECURITY_LOG`), que registra o que ele fez.
+- O trigger trava a linha de controle até o fim da transação de quem insere: as gravações de log de
+  um mesmo ambiente acontecem uma de cada vez.
+- Os scripts de `oracle-init` só rodam no primeiro boot do container. No banco que já existia, a
+  remoção dos 12 schemas e a criação dos schemas de log foram aplicadas à mão, rodando o mesmo
+  `11_schema_log.sql` (ele é idempotente).
+
+**Verificação.** `Test-SchemaLogSomenteInsercao.ps1` (16 casos) entra como uma conta de API de
+verdade e tenta alterar, apagar, esvaziar, desligar o trigger, ler a tabela de controle e logar no
+schema de log; depois, como DBA, faz as três adulterações e confere que a view acusa cada uma. A
+suíte completa ficou com 262 casos em 34 arquivos, todos passando.
+
+## 23. (endurecimento, não um bug) A API deixa de rodar como dona das tabelas, e o log ganha uma âncora fora do banco
+
+**Problema 1: a conta que atendia os pedidos podia apagar as tabelas.** O item 21 colocou a API no
+banco por proxy no schema do ambiente. Quem entra assim age como o DONO, e o dono de uma tabela
+sempre pode apagá-la: `DROP` não exige privilégio nenhum sobre objeto próprio, e restringir roles no
+proxy não muda isso. Era a "limitação conhecida" registrada no próprio item 21.
+
+**Correção.** Um schema novo por ambiente, `KAWASHI_ENV_<AMBIENTE>_APP` (`09_environments.sql`, seção
+2.1): `NO AUTHENTICATION`, só `CREATE SESSION`, sem quota, sem objetos. E duas contas de API por
+ambiente, escolhidas por `create-api-account.ps1 -Papel`:
+
+- **Execução** (padrão): proxy no schema `_APP`. É a que atende os pedidos. Só tem o que o dono das
+  tabelas concede a `_APP`: `SELECT`/`INSERT`/`UPDATE`/`DELETE` nas tabelas de cadastro (concedidos
+  pela migração da API, depois de criá-las) e `INSERT`/`SELECT` no schema de log.
+- **Migração**: proxy no schema do ambiente, o dono. Só é usada na subida da aplicação.
+
+O schema de log passou a conceder acesso só a `_APP`; o schema do ambiente (a conta de migração e as
+pessoas) não lê nem grava log.
+
+**Problema 2: quem tem DBA recalculava a corrente do log sem deixar rastro.** Era o "limite honesto"
+do item 22: a view de conferência compara o banco com ele mesmo.
+
+**Correção.** `scripts/ancorar-log.ps1` guarda no Vault (`kawashi-secrets/log-ancora/<AMBIENTE>`) o
+número e o hash da última linha de `LOG_ALTERACAO`. Com `-Acao Conferir` ele compara o banco com a
+âncora e sai com código 1 se a linha ancorada mudou, sumiu, ou se o log encolheu. Com `-Acao Ancorar`
+ele confere primeiro e **se recusa a ancorar por cima de uma divergência**.
+
+**Limites conhecidos.**
+- No desenvolvimento o Vault roda em memória (a âncora some no restart) e o script usa o token root,
+  que é do mesmo engenheiro que tem DBA. Em produção a âncora precisa ser gravada com uma credencial
+  que o DBA não tem; do contrário as duas chaves estão na mesma mão.
+- A âncora protege o que foi gravado **até** ela. O que veio depois ainda depende só do banco, então
+  o script precisa rodar com frequência (agendado). Isso ainda não está automatizado.
+- A conta de execução continua lendo e alterando todas as linhas de cadastro. Limitar por usuário e
+  por empresa é papel do login e da autorização da API.
+
+**Verificação.** `Test-ContaApiViaProxy.ps1` confirma que a conta de execução não cria tabela nem
+entra como dona, e que a de migração cria e apaga. `Test-AncoraDoLog.ps1` faz o ataque de verdade:
+como DBA, altera uma linha ancorada e recalcula a corrente inteira; confirma que a view interna volta
+a ficar **vazia** (o ataque engana o encadeamento) e que a conferência contra o Vault o denuncia.
+
+## 24. (bug real) O primeiro `ALTER SYSTEM` do `enable-tde.ps1` dava `ORA-01031` mesmo como SYSDBA
+
+**Sintoma.** `ALTER SYSTEM SET WALLET_ROOT ... SCOPE = SPFILE` falhava com `ORA-01031: insufficient
+privileges` quando enviado pelo script; o mesmo comando, de um arquivo dentro do container, dava
+"System altered".
+
+**Causa.** O script montava `sqlplus -s "/ as sysdba"` com aspas **duplas** dentro de um argumento
+passado ao `docker exec ... sh -c`. O Windows PowerShell 5.1 remove aspas duplas internas ao chamar
+um programa externo, então o `sqlplus` recebia `/`, `as` e `sysdba` como argumentos soltos e entrava
+sem o papel de SYSDBA.
+
+**Correção.** Aspas **simples** em volta de `/ as sysdba` (não são mexidas pelo PowerShell). O passo
+do `WALLET_ROOT` também passou a reconferir o valor depois do reinício e falhar com mensagem clara se
+continuar vazio.
+
+## 25. (achado de projeto) Ninguém sabia quem era cada conta do banco nem quando a senha vencia
+
+**Problema.** O Oracle guarda a conta, o perfil de senha e as datas, mas não o nome da pessoa nem o
+cargo, e o único registro de "quem pediu o quê" era a memória de quem rodou o script. Conta de API
+tem a senha sem validade (de propósito), então ninguém seria avisado de que ela passou dos 90 dias.
+
+**Correção.** `12_cadastro_de_contas.sql` (tabela `KAWASHI_CONTA`, procedure de escrita, função da
+regra de senha, duas visões) e `scripts/cadastro-de-contas.ps1`. Os dois scripts de criação passaram
+a cadastrar a conta na mesma execução (`-Nome`, `-Cargo`, `-Responsavel`).
+
+**Dois cuidados que viraram teste.** (1) Para testar os 90 dias sem esperar, a primeira ideia foi
+envelhecer a data no dicionário (`SYS.USER$`), e o Oracle 23ai recusa até para SYS (`ORA-41900`).
+A regra foi para uma função que recebe a idade como parâmetro, testada nas fronteiras (74, 75, 90, 91
+dias). (2) Nome com acento virava `?` porque o `sqlplus` do container lia o texto como ASCII; os
+scripts passaram a mandar `NLS_LANG=AMERICAN_AMERICA.AL32UTF8`.
+
+**Verificação.** `Test-CadastroDeContas.ps1` (24 casos) e `Test-CriptografiaEmDisco.ps1` (12 casos).
+O TDE também foi conferido depois de um reinício real do Docker: o keystore abriu sozinho.
+
+## 26. (exposição real) Banco e Vault abertos para a rede, e um banco sem volume de dados
+
+**Problema.** O `docker-compose.yml` publicava `"1521:1521"` e `"8200:8200"`. Sem o IP na frente, o
+Docker publica em **todas** as interfaces da máquina: qualquer um no mesmo Wi-Fi (escritório,
+faculdade) alcançava o Oracle e o Vault, que no modo dev responde em HTTP puro e aceita o token root.
+
+**Correção.** `"127.0.0.1:1521:1521"` e `"127.0.0.1:8200:8200"`. Teste: `Test-PortasSoNaMaquinaLocal.ps1`
+(lê o compose). Conferência ao vivo: a `rotina-diaria.ps1` acusa todo dia a porta exposta no
+container que está rodando.
+
+**O achado maior, encontrado ao tentar aplicar.** Mudar a porta publicada exige recriar o container,
+e o container do Oracle **não tem volume de dados**: o banco inteiro mora na camada gravável do
+container. Recriar apagaria ambientes, contas, cadastro e a chave do TDE. Por isso a correção está no
+arquivo, mas o container atual continua publicando para a rede até uma recriação planejada (com o
+banco preservado ou reconstruído de propósito). Até lá, a rotina diária mantém o alerta.
+
+## 27. (bug real) A busca das sessões abertas por proxy no desligamento não achava nada
+
+**Sintoma.** No primeiro teste do `remove-team-member.ps1`, a sessão aberta por proxy continuava
+viva depois do desligamento, e o próprio teste dizia que não sobrava sessão nenhuma.
+
+**Causa.** Duas. (1) A procedure procurava a sessão por proxy cruzando `UNIFIED_AUDIT_TRAIL.SESSIONID`
+com `v$session.AUDSID`, supondo que fossem o mesmo número; não são. (2) O teste contava as sessões
+com a **mesma** busca da procedure, então o erro de uma escondia o da outra.
+
+**Correção.** A ligação certa é o processo do servidor: a auditoria de logon grava `OS_PROCESS`, e o
+`v$process.SPID` diz qual processo atende cada sessão. A sessão é da pessoa quando o último logon
+auditado naquele processo foi feito por proxy por ela (o "último" evita confundir com um processo
+antigo de mesmo número e não depende de fuso horário). O teste passou a marcar as próprias sessões
+com um módulo (`DBMS_APPLICATION_INFO`) e contar por essa marca, independente da procedure.
+
+**Achado extra.** `ALTER SYSTEM KILL SESSION ... IMMEDIATE` devolve `ORA-00031` ("session marked for
+kill") mesmo quando a sessão cai; a procedure conta esse caso como sessão derrubada.
+
+## 28. (bug real) A rotina diária funcionava no terminal e morria no Agendador de Tarefas
+
+**Sintoma.** Disparada pelo Agendador, a tarefa terminava com código 1 em segundos e sem relatório.
+
+**Causa.** O Agendador chama o script com `powershell -File`. Nesse modo, no Windows PowerShell 5.1,
+`$PSScriptRoot` ainda está vazio no bloco `param`, então o valor padrão `Join-Path $PSScriptRoot ...`
+falhava antes da primeira linha útil. Pelo terminal (`& script.ps1`) o problema não aparece.
+
+**Correção.** A pasta do script passou a ser calculada no corpo, com `$MyInvocation.MyCommand.Path`.
+O teste passou a chamar a rotina com `-File`, do jeito que o Agendador chama. Disparo real pelo
+Agendador depois da correção: código 0 e relatório gravado.
+
+## 29. (lacuna de processo) O painel cobrava a troca da senha da API, mas não havia como trocar
+
+**Problema.** O cadastro de contas (item 25) marca `VENCIDA` a senha de API com mais de 90 dias,
+mas trocar era manual: alterar no Oracle, no Vault e no `.env`, e a API caía entre a troca no banco
+e o reinício com a senha nova.
+
+**Correção.** `scripts/rotate-api-password.ps1` e `PASSWORD_ROLLOVER_TIME 1` no
+`KAWASHI_SERVICE_PROFILE` (troca gradual do Oracle 23ai): logo depois da troca, a antiga e a nova
+valem juntas, e `-EncerrarSenhaAntiga` corta a antiga depois do reinício. O painel mostra a troca em
+andamento como pendência.
+
+**Verificação.** `Test-RotacaoSenhaApi.ps1` (13 casos). Conferido quebrando de propósito: com a
+troca gradual desligada no perfil, 4 casos falham (a senha antiga deixa de entrar logo depois da
+troca, ou seja, a API rodando cairia).
+
+## 30. (bug real, pego pelo próprio teste) Reler o listener deixava o banco inalcançável pela rede
+
+**Sintoma.** Depois de `lsnrctl reload`, toda conexão pela rede falhava com `ORA-12514: Service
+FREEPDB1 is not registered with the listener`, por alguns segundos ou mais. A primeira aplicação do
+`apply-network-hardening.ps1` passou por sorte de tempo; o teste, que desfaz e aplica de novo, pegou.
+
+**Causa.** O reload faz o listener esquecer os serviços que o banco tinha registrado dinamicamente.
+O banco só se registra de novo no ciclo dele.
+
+**Correção.** Depois de todo reload, o script manda `ALTER SYSTEM REGISTER` pela conexão local (que
+não depende do listener), e o teste de conexão espera até 30 s se o erro for só `ORA-12514`. Se
+mesmo assim a conexão falhar, o script volta os arquivos originais. Durante o incidente, o banco
+ficou fora da rede até o `ALTER SYSTEM REGISTER` manual, que o devolveu na hora.
+
+## 31. (bug real e grave, pego pelo teste) Token vencido continuava valendo por mais 5 horas
+
+**Sintoma.** No primeiro teste do login, um token com `EXPIRA_EM` 5 minutos no passado ainda abria a
+API. O mesmo acontecia com o bloqueio da conta: ele durava 5 horas e meia, e não 30 minutos.
+
+**Causa.** As colunas de hora são `TIMESTAMP` (sem fuso), gravadas com `SYSTIMESTAMP` (que no
+servidor está em UTC). A comparação `EXPIRA_EM > SYSTIMESTAMP` mistura os dois tipos, e o Oracle
+converte a coluna para `TIMESTAMP WITH TIME ZONE` usando o fuso da **sessão** de quem consulta. A
+sessão da API (driver JDBC) usa o fuso do Windows, −05:00: a coluna era lida como 5 horas mais tarde
+do que de fato era. Num servidor e numa API no mesmo fuso o defeito nem apareceria, e por isso seria
+fácil passar para produção.
+
+**Correção.** Tudo em UTC explícito: as colunas nascem com `SYS_EXTRACT_UTC(SYSTIMESTAMP)`, os
+gatilhos gravam assim, e toda comparação da API e do job de limpeza usa o mesmo. As respostas da API
+trazem a hora com `Z`.
+
+**Verificação.** O `LoginApiTest` força a sessão do banco em −05:00 antes de cada teste (com a sessão
+em UTC o defeito ficaria escondido). Conferido quebrando de propósito: com **uma** comparação de volta
+para `SYSTIMESTAMP`, o teste do token vencido falha (o token entra com `200`).
+
+Quando o login passou a ser por passkey (20/11/2026), o `LoginApiTest` saiu e, com ele, essa trava. O
+`PasskeyApiTest` a recuperou: sessão em −05:00 antes de cada teste, token vencido e desafio vencido.
+Conferido de novo quebrando de propósito as comparações do token e do desafio (cada uma derrubou o seu
+teste). Lição: ao reescrever um módulo, os testes que nasceram de um bug real precisam ir junto.
+
+## 32. (bug real) Oito scripts e o executor dos testes não rodavam com `powershell -File`
+
+**Sintoma.** Depois de um reinício do Docker, o `vault-init.ps1` chamado com
+`powershell -File .\infra\scripts\vault-init.ps1` morreu antes de começar: `Join-Path` com caminho vazio.
+
+**Causa.** Com `[CmdletBinding()]`, no Windows PowerShell 5.1 chamado com `-File`, o `$PSScriptRoot`
+(e o `$MyInvocation.MyCommand.Path`) ainda estão vazios quando os valores padrão do bloco `param` são
+calculados. Sem `[CmdletBinding()]` o problema não aparece, e chamando de dentro de outro script
+(`& .\script.ps1`) também não: por isso ninguém viu. É o mesmo defeito do item 28 (a rotina diária no
+Agendador), que tinha sido corrigido só naquele script.
+
+**Correção.** Nos oito scripts (`ancorar-log`, `cadastro-de-contas`, `create-api-account`,
+`create-team-member`, `enable-tde`, `remove-team-member`, `vault-init`, `verify-environment`) e no
+`Run-AllTests.ps1`, o padrão do `-EnvFile` saiu do `param` e é calculado logo depois, no corpo do
+script. Os 43 arquivos de teste têm o mesmo padrão, mas são chamados pelo executor dentro do mesmo
+processo e sempre com `-EnvFile`, então não foram mexidos.
+
+**Verificação.** Reproduzido com um script mínimo (com e sem `[CmdletBinding()]`); depois da correção,
+`vault-init.ps1` e `Run-AllTests.ps1` rodaram com `-File` (suíte: 375 de 375).
+
+## 33. (armadilha) O Vault de desenvolvimento esquece tudo quando o Docker reinicia
+
+Num reinício do Docker Desktop, os contêineres voltaram sozinhos. O Oracle manteve os dados (o
+contêiner é o mesmo, só reiniciou). O Vault, em modo `-dev`, voltou **vazio**: sem o engine
+`kawashi-secrets`, toda gravação dava `403` ("preflight capability check"), uma mensagem que parece
+falta de permissão e não é. Depois de qualquer reinício: `vault-init.ps1` (repõe o engine e a cópia
+da chave do TDE), `gerar-chaves-de-cifra.ps1 -SoCopiarParaOVault` e
+`gerar-segredo-do-bff.ps1 -SoCopiarParaOVault` (no repositório da API). A rotina diária já avisa quando
+o Vault foi reiniciado.
 
 ## Validação final
 

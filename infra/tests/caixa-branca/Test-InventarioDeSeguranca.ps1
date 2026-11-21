@@ -110,7 +110,8 @@ SELECT object_name FROM dba_objects WHERE object_name LIKE 'KAWASHI%' AND object
 EXIT;
 '@
 $procsReais = Get-ConjuntoViaSql -Sql $sqlProcs
-$procsEsperados = @('KAWASHI_PASSWORD_VERIFY', 'KAWASHI_WRITE_SECURITY_LOG')
+# KAWASHI_REGISTRAR_CONTA, KAWASHI_SITUACAO_DA_SENHA e KAWASHI_DESLIGAR_CONTA: cadastro de contas (12_cadastro_de_contas.sql).
+$procsEsperados = @('KAWASHI_PASSWORD_VERIFY', 'KAWASHI_WRITE_SECURITY_LOG', 'KAWASHI_REGISTRAR_CONTA', 'KAWASHI_SITUACAO_DA_SENHA', 'KAWASHI_DESLIGAR_CONTA', 'KAWASHI_LIGAR_LOGIN_PESSOA')
 $results += Compare-Inventario -Nome 'procedures/functions' -Esperado $procsEsperados -Real $procsReais
 
 # --- Jobs agendados -----------------------------------------------------------
@@ -122,7 +123,7 @@ SELECT job_name FROM dba_scheduler_jobs WHERE job_name LIKE 'KAWASHI%' ORDER BY 
 EXIT;
 '@
 $jobsReais = Get-ConjuntoViaSql -Sql $sqlJobs
-$jobsEsperados = @('KAWASHI_DB_MAINTENANCE_JOB', 'KAWASHI_INDEX_REBUILD_JOB', 'KAWASHI_UNIFIED_AUDIT_PURGE_JOB')
+$jobsEsperados = @('KAWASHI_DB_MAINTENANCE_JOB', 'KAWASHI_INDEX_REBUILD_JOB', 'KAWASHI_UNIFIED_AUDIT_PURGE_JOB', 'KAWASHI_LIMPEZA_SESSAO_JOB')
 $results += Compare-Inventario -Nome 'jobs agendados' -Esperado $jobsEsperados -Real $jobsReais
 
 # --- Tabelas de controle/log do SIEM -----------------------------------------
@@ -134,7 +135,7 @@ SELECT table_name FROM dba_tables WHERE table_name LIKE 'KAWASHI%' AND owner = '
 EXIT;
 '@
 $tabelasReais = Get-ConjuntoViaSql -Sql $sqlTabelas
-$tabelasEsperadas = @('KAWASHI_ALLOWED_IPS', 'KAWASHI_FORBIDDEN_TOOLS', 'KAWASHI_SECURITY_LOG', 'KAWASHI_SECURITY_LOG_FALLBACK')
+$tabelasEsperadas = @('KAWASHI_ALLOWED_IPS', 'KAWASHI_FORBIDDEN_TOOLS', 'KAWASHI_SECURITY_LOG', 'KAWASHI_SECURITY_LOG_FALLBACK', 'KAWASHI_CONTA')
 $results += Compare-Inventario -Nome 'tabelas de controle/log (owner SYS)' -Esperado $tabelasEsperadas -Real $tabelasReais
 
 $results | ForEach-Object { Write-TestResult -Result $_ }

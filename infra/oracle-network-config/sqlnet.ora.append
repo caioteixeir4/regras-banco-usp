@@ -1,12 +1,7 @@
-# Trechos para ADICIONAR ao sqlnet.ora existente do container (nao substituir o
-# arquivo inteiro - ele ja vem com outras diretivas da propria imagem).
-# Ver infra/docs/hardening-rede.md para o passo a passo de como aplicar.
-
-# Exige que toda conexao cliente<->servidor seja criptografada (nao so "aceita
-# se o cliente pedir" - REQUIRED recusa conexao nao criptografada).
+# Bloco que infra/scripts/apply-network-hardening.ps1 acrescenta ao sqlnet.ora do container, entre
+# os marcadores "# >>> KAWASHI" e "# <<< KAWASHI". Este arquivo e a fonte: mude aqui e rode o script.
+# Toda conexao pela rede e cifrada (REQUIRED recusa quem nao cifra) e conferida contra adulteracao.
 SQLNET.ENCRYPTION_SERVER = REQUIRED
-SQLNET.ENCRYPTION_TYPES_SERVER = (AES256, AES192, AES128)
-
-# Garante integridade dos pacotes em transito (detecta adulteracao no meio do caminho).
+SQLNET.ENCRYPTION_TYPES_SERVER = (AES256)
 SQLNET.CRYPTO_CHECKSUM_SERVER = REQUIRED
 SQLNET.CRYPTO_CHECKSUM_TYPES_SERVER = (SHA256)

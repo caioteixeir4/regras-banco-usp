@@ -24,10 +24,13 @@
 
 [CmdletBinding()]
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot '..\.env')
+    [string]$EnvFile
 )
 
 $ErrorActionPreference = 'Stop'
+# Padrao do -EnvFile calculado AQUI, e nao no bloco param: com [CmdletBinding()], quando o script
+# e chamado com "powershell -File", o $PSScriptRoot ainda esta vazio nos valores padrao do param.
+if (-not $EnvFile) { $EnvFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\.env' }
 
 # CORRIGIDO (achado testando ao vivo): o PowerShell 5.1 sempre insere um BOM
 # UTF-8 no inicio de qualquer conteudo enviado via pipe "|" pra um processo

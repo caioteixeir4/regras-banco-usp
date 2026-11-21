@@ -26,16 +26,24 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot '..\.env'),
+    [string]$EnvFile,
     [ValidateSet('unitarios', 'caixa-branca', 'caixa-preta', 'outros')]
     [string[]]$Categoria = @('unitarios', 'caixa-branca', 'caixa-preta', 'outros')
 )
 
 $ErrorActionPreference = 'Stop'
+# Padrao do -EnvFile calculado AQUI: com [CmdletBinding()] e "powershell -File", o $PSScriptRoot fica vazio no bloco param.
+if (-not $EnvFile) { $EnvFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\.env' }
 $inicio = Get-Date
 $totalPassou = 0
 $totalFalhou = 0
 $falhas = @()
+
+# O Vault roda em modo "-dev" (memoria): todo restart do container (ou do Docker Desktop) apaga o
+# engine de segredos e o metodo de login. Sem eles, o primeiro teste que usa o Vault falha com um
+# erro que nao diz a causa. O vault-init.ps1 e idempotente, entao roda sempre antes da suite.
+Write-Host "-> Garantindo que o Vault esta inicializado (vault-init.ps1)..." -ForegroundColor DarkCyan
+& (Join-Path $PSScriptRoot '..\scripts\vault-init.ps1') -EnvFile $EnvFile | Out-Null
 
 foreach ($cat in $Categoria) {
     $pasta = Join-Path $PSScriptRoot $cat
@@ -48,13 +56,27 @@ foreach ($cat in $Categoria) {
         Write-Host "## $cat / $($script.Name)" -ForegroundColor DarkCyan
         Write-Host "########################################################" -ForegroundColor DarkCyan
 
-        $resultados = & $script.FullName -EnvFile $EnvFile
+        # Um teste que LANCA excecao (em vez de devolver um resultado com falha) nao pode derrubar
+        # a suite inteira sem resumo: conta como uma falha daquele arquivo e a execucao segue.
+        try {
+            $resultados = & $script.FullName -EnvFile $EnvFile
+        } catch {
+            Write-Host "  [ERRO]  O arquivo de teste abortou: $($_.Exception.Message)" -ForegroundColor Red
+            $resultados = @([pscustomobject]@{ Passed = $false; Name = "arquivo abortou: $($_.Exception.Message)" })
+        }
 
         foreach ($r in $resultados) {
             if ($r.Passed) { $totalPassou++ } else { $totalFalhou++; $falhas += "[$cat/$($script.Name)] $($r.Name)" }
         }
     }
 }
+
+# As contas descartaveis dos testes (TST_*) passam pelo cadastro de contas (SYS.KAWASHI_CONTA) e
+# sao apagadas do banco no fim de cada teste; o cadastro delas ficaria para sempre como "REMOVIDA".
+# So sai o que e de teste E ja nao existe no banco.
+$limpeza = "ALTER SESSION SET CONTAINER = FREEPDB1;`nDELETE FROM SYS.KAWASHI_CONTA WHERE USERNAME LIKE 'TST\_%' ESCAPE '\' AND USERNAME NOT IN (SELECT username FROM dba_users);`nCOMMIT;`nEXIT;`n"
+$b64Limpeza = [Convert]::ToBase64String([System.Text.UTF8Encoding]::new($false).GetBytes($limpeza))
+docker exec -i kawashi-oracle sh -c ('echo ' + $b64Limpeza + " | base64 -d | sqlplus -s '/ as sysdba'") 2>&1 | Out-Null
 
 $duracao = (Get-Date) - $inicio
 

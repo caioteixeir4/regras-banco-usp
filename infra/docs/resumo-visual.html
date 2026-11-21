@@ -263,8 +263,8 @@
       <div class="glance-row"><dt>O que é</dt><dd>As regras de segurança do banco, escritas em SQL e PowerShell, que rodam contra um Oracle de verdade.</dd></div>
       <div class="glance-row"><dt>Onde roda</dt><dd>Dois containers Docker: Oracle Database Free e HashiCorp Vault.</dd></div>
       <div class="glance-row"><dt>O que protege</dt><dd>Senha, sessão, auditoria, logon, privilégios mínimos e 6 ambientes separados.</dd></div>
-      <div class="glance-row"><dt>Quem entra</dt><dd>Pessoas, por perfil, atuando como o schema do ambiente (proxy). A API usa uma conta de serviço própria.</dd></div>
-      <div class="glance-row"><dt>Como se prova</dt><dd>247 casos de teste em 35 arquivos, todos passando, rodando contra Oracle e Vault reais.</dd></div>
+      <div class="glance-row"><dt>Quem entra</dt><dd>Pessoas, por perfil, atuando como o schema do ambiente (proxy). A API entra pelo mesmo caminho, com uma conta de serviço por ambiente.</dd></div>
+      <div class="glance-row"><dt>Como se prova</dt><dd>375 casos de teste em 43 arquivos, todos passando, rodando contra Oracle e Vault reais.</dd></div>
       <div class="glance-row"><dt>O que não está aqui</dt><dd>Tabelas de negócio e a API do banco. Vão para o <code>tabelas-api-banco-usp</code>.</dd></div>
     </dl>
 
@@ -273,8 +273,8 @@
       <div class="stat"><b>6</b><span>ambientes</span></div>
       <div class="stat"><b>5</b><span>perfis de acesso</span></div>
       <div class="stat"><b>4</b><span>tabelas de controle</span></div>
-      <div class="stat"><b>247</b><span>casos de teste</span></div>
-      <div class="stat"><b>20</b><span>achados documentados</span></div>
+      <div class="stat"><b>375</b><span>casos de teste</span></div>
+      <div class="stat"><b>31</b><span>achados documentados</span></div>
     </div>
   </header>
 
@@ -291,15 +291,15 @@
 flowchart LR
     subgraph REGRAS["regras-banco-usp (este repositório)"]
         R1["Hardening, auditoria&lt;br/&gt;e trilha de segurança"]
-        R2["Ambientes, schemas de serviço,&lt;br/&gt;perfis e proxy"]
-        R3["Testes de contrato&lt;br/&gt;+ fixture mínima"]
+        R2["Ambientes, perfis e proxy"]
+        R3["Schema de log da aplicação&lt;br/&gt;a API só insere"]
     end
     subgraph TABELAS["tabelas-api-banco-usp"]
-        T1["Tabelas padrão&lt;br/&gt;CLIENTE, ENDERECO, EMPRESA..."]
-        T2["Tabelas de serviço e de plataforma&lt;br/&gt;SEFAZ, SIMPLES_NACIONAL, ORGANIZACOES, LOGIN..."]
+        T1["Cadastros&lt;br/&gt;EMPRESA, FILIAL, PESSOA, CONTATO, ENDERECO"]
+        T2["Login e autorização&lt;br/&gt;a fazer"]
         T3["API do banco"]
     end
-    TABELAS -- "precisa passar nos" --> R3
+    T3 -- "registra em" --> R3
     TABELAS -- "roda dentro dos schemas de" --> R2
       </pre>
     </div>
@@ -309,8 +309,7 @@ flowchart LR
         <h3>Fica aqui</h3>
         <ul>
           <li>As 4 tabelas de controle de segurança</li>
-          <li>Fixture mínima: <code>CLIENTE</code> e <code>SEFAZ.CONFIGURACAO_FISCAL</code>, só para os testes</li>
-          <li>Os schemas de serviço <code>SEFAZ</code> e <code>SIMPLES_NACIONAL</code> (as tabelas de negócio dentro deles ficam no outro repositório)</li>
+          <li>As tabelas de log da aplicação (<code>LOG_ALTERACAO</code>, <code>LOG_ACESSO</code>), uma cópia por ambiente, para a API não ser dona delas</li>
           <li>Hardening, ambientes, perfis, auditoria, Vault, scripts e testes</li>
         </ul>
       </div>
@@ -319,7 +318,7 @@ flowchart LR
         <ul>
           <li>Tabelas padrão completas: <code>ENDERECO</code>, <code>EMPRESA</code>, <code>FILIAL</code>, <code>CONTATO</code>, <code>SOCIO</code></li>
           <li>Schemas <code>ORGANIZACOES</code>, <code>LOGIN</code> e <code>ADMINISTRACAO</code></li>
-          <li>A API do banco</li>
+          <li>A API do banco, em Java 24 e Spring Boot, que já cobre as 6 tabelas padrão</li>
         </ul>
       </div>
       <div class="card">
@@ -354,8 +353,8 @@ flowchart TB
         INIT["infra/oracle-init/*.sql&lt;br/&gt;11 scripts"]
         SCR["Scripts PowerShell&lt;br/&gt;infra/scripts"]
         subgraph NET["rede kawashi-net (bridge privada)"]
-            ORA["kawashi-oracle&lt;br/&gt;Oracle Free · porta 1521&lt;br/&gt;banco FREEPDB1"]
-            VLT["kawashi-vault&lt;br/&gt;Vault 1.15.6 · porta 8200&lt;br/&gt;modo dev, em memória"]
+            ORA["kawashi-oracle&lt;br/&gt;Oracle Free · 127.0.0.1:1521&lt;br/&gt;banco FREEPDB1"]
+            VLT["kawashi-vault&lt;br/&gt;Vault 1.15.6 · 127.0.0.1:8200&lt;br/&gt;modo dev, em memória"]
         end
     end
     VOCE -- "1521 · SQL" --> ORA
@@ -372,7 +371,7 @@ flowchart TB
         <p class="where">gvenzl/oracle-free:latest</p>
         <dl class="kv">
           <dt>Banco</dt><dd>Oracle Database Free (23ai), banco <code>FREEPDB1</code></dd>
-          <dt>Porta</dt><dd><code>1521</code></dd>
+          <dt>Porta</dt><dd><code>127.0.0.1:1521</code> (só esta máquina; o container atual ainda publica para a rede até ser recriado)</dd>
           <dt>1º boot</dt><dd>Roda os 11 scripts de <code>oracle-init</code> e cria as contas da API e do engenheiro a partir do <code>.env</code>. Leva de 1 a 3+ minutos.</dd>
           <dt>Saúde</dt><dd>O compose roda o <code>healthcheck.sh</code> da imagem a cada 10 s, com 30 s de carência, e marca o container como <code>unhealthy</code> após 18 falhas seguidas. Política de reinício: <code>unless-stopped</code>.</dd>
         </dl>
@@ -382,7 +381,7 @@ flowchart TB
         <p class="where">hashicorp/vault:1.15.6</p>
         <dl class="kv">
           <dt>Versão</dt><dd>Fixa. A 1.16+ trava no Docker Desktop do Windows.</dd>
-          <dt>Porta</dt><dd><code>8200</code></dd>
+          <dt>Porta</dt><dd><code>127.0.0.1:8200</code> (só esta máquina; idem)</dd>
           <dt>Modo</dt><dd>Dev: tudo em memória, token raiz vem do <code>.env</code>. Perde tudo a cada recriação.</dd>
           <dt>Guarda</dt><dd>Senha temporária de cada pessoa nova e o login pessoal dela. Engine <code>kawashi-secrets</code> (KV v2) e login <code>userpass</code>.</dd>
         </dl>
@@ -473,7 +472,7 @@ flowchart TB
         <p class="where">01 · 06 · 08 · 09 · onboarding</p>
         <ul>
           <li>5 roles com privilégios exatos, conferidos por teste: <code>DEVELOPER</code>, <code>INFRA</code>, <code>HOMOLOG_VIEWER</code>, <code>READWRITE</code>, <code>READONLY</code></li>
-          <li>Conta da API: perfil de serviço, cota só na tablespace dela, sem <code>UNLIMITED TABLESPACE</code></li>
+          <li>Contas de API (<code>create-api-account.ps1</code>): perfil de serviço, só <code>CREATE SESSION</code>, entram no ambiente por proxy. A conta antiga <code>KAWASHI_SPRING_USER</code> segue com cota só na tablespace dela e sem <code>UNLIMITED TABLESPACE</code></li>
           <li>O onboarding (<code>create-team-member.ps1</code>) só aceita as roles da Kawashi e recusa as perigosas, como <code>DBA</code></li>
           <li>Engenheiro com <code>DBA</code>: dívida declarada, reduzir quando houver mais gente operando</li>
         </ul>
@@ -484,8 +483,8 @@ flowchart TB
         <ul>
           <li>6 schemas de ambiente, cada um com tablespace própria e tamanho máximo</li>
           <li>Schemas sem senha (<code>NO AUTHENTICATION</code>): ninguém loga neles direto. O acesso é por proxy, concedido pelo onboarding</li>
-          <li>12 schemas de serviço (<code>SEFAZ</code> e <code>SIMPLES_NACIONAL</code> em cada ambiente), com acesso à parte e explícito</li>
-          <li>Trigger libera leitura das tabelas e views novas do schema padrão de Homologação para a role de visualização (os schemas de serviço ainda não têm isso)</li>
+          <li>6 schemas de log da aplicação (um por ambiente), em que ninguém loga e a API só insere e lê</li>
+          <li>Trigger libera leitura das tabelas e views novas do schema de Homologação para a role de visualização</li>
         </ul>
       </div>
     </div>
@@ -503,9 +502,9 @@ flowchart TB
           <tr><td>06_access_management</td><td>Roles <code>READONLY</code>/<code>READWRITE</code>, endurecimento da conta da API, contas de demonstração trancadas</td></tr>
           <tr><td>07_maintenance_jobs</td><td>2 jobs: manutenção diária às 02:00 e reconstrução semanal de índices (domingo, 03:00)</td></tr>
           <tr><td>08_engineer_account</td><td>Conta pessoal do engenheiro, com <code>DBA</code>, separada do <code>SYS</code></td></tr>
-          <tr><td>09_environments</td><td>6 ambientes (schemas sem senha, cada um com tablespace), 12 schemas de serviço, role de visualização e auto-grant em Homologação. O proxy é concedido depois, pelo onboarding</td></tr>
+          <tr><td>09_environments</td><td>6 ambientes (schemas sem senha, cada um com tablespace), role de visualização e auto-grant em Homologação. O proxy é concedido depois, pelo onboarding</td></tr>
           <tr><td>10_advanced_hardening</td><td>Limite no protocolo, purga da auditoria, <code>EXECUTE</code> revogado de <code>PUBLIC</code></td></tr>
-          <tr><td>11_fixture_contrato_segmentacao</td><td>Fixture mínima para os testes: <code>CLIENTE</code> e <code>SEFAZ.CONFIGURACAO_FISCAL</code></td></tr>
+          <tr><td>11_schema_log</td><td>Schema de log da aplicação por ambiente: tabelas, trigger de encadeamento por hash, view de conferência e permissões (só <code>INSERT</code> e <code>SELECT</code>)</td></tr>
         </tbody>
       </table>
     </div>
@@ -522,7 +521,7 @@ flowchart TB
 
   <section id="ambientes" class="section">
     <span class="section-tag">Ciclo de vida</span>
-    <h2>6 ambientes, 5 perfis e a conta do engenheiro</h2>
+    <h2>6 ambientes, 5 perfis, a conta do engenheiro e as contas de API</h2>
     <p class="desc">
       A pessoa entra com a própria conta e passa a atuar como o schema do ambiente liberado para
       o perfil dela. Produção só é alcançada manualmente, pelo engenheiro.
@@ -578,6 +577,7 @@ flowchart LR
           <tr><td>Infra</td><td>Infra e Homologação</td><td>Proxy</td></tr>
           <tr><td>HomologViewer</td><td>Homologação, somente leitura</td><td>Role de <code>SELECT</code>, sem proxy</td></tr>
           <tr><td>Engenheiro</td><td>Todos, inclusive Produção</td><td>Conta própria com <code>DBA</code></td></tr>
+          <tr><td>Conta de API</td><td>Um ambiente, escolhido na criação (Produção fica de fora)</td><td>Proxy, com o perfil de serviço</td></tr>
         </tbody>
       </table>
     </div>
@@ -590,10 +590,10 @@ flowchart LR
 
   <section id="tabelas" class="section">
     <span class="section-tag">Tabelas</span>
-    <h2>4 tabelas de controle e uma fixture de 2</h2>
+    <h2>4 tabelas de controle e o log da aplicação</h2>
     <p class="desc">
       Este repositório só tem tabelas que servem às regras. As quatro de controle são do dono
-      <code>SYS</code>. A fixture existe para os testes terem o que exercitar.
+      <code>SYS</code>. As de log da aplicação ficam num schema próprio por ambiente.
     </p>
 
     <div class="table-frame">
@@ -608,35 +608,36 @@ flowchart LR
       </table>
     </div>
 
-    <h3>O padrão que a fixture prova: tabela padrão e schema de serviço</h3>
+    <h3>O schema de log da aplicação: a API só insere</h3>
     <div class="diagram-frame">
       <pre class="mermaid">
-flowchart TB
-    subgraph PADRAO["KAWASHI_ENV_DEV · padrão"]
-        CLIENTE["CLIENTE&lt;br/&gt;id · cnpj · razao_social"]
+flowchart LR
+    API["Conta de execução da API&lt;br/&gt;proxy em KAWASHI_ENV_TESTE_DEV_APP"]
+    subgraph ENV["KAWASHI_ENV_TESTE_DEV"]
+        CAD["tabelas de cadastro&lt;br/&gt;criadas pela API"]
     end
-    subgraph SEFAZ["KAWASHI_ENV_DEV_SEFAZ · serviço"]
-        CONFIG["CONFIGURACAO_FISCAL&lt;br/&gt;id · cliente_id · regime_tributario"]
+    subgraph LOG["KAWASHI_ENV_TESTE_DEV_LOG · ninguém loga aqui"]
+        ALT["LOG_ALTERACAO&lt;br/&gt;numerada e encadeada por hash"]
+        ACE["LOG_ACESSO"]
+        CADEIA["LOG_CADEIA&lt;br/&gt;controle interno"]
     end
-    subgraph SIMPLES["KAWASHI_ENV_DEV_SIMPLES_NACIONAL · serviço"]
-        VAZIO["vazio, ainda sem grant sobre o padrão"]
-    end
-    CONFIG -- "FK + SELECT" --> CLIENTE
-    DEV1["Desenvolvedor, qualquer um"] -- proxy --> PADRAO
-    DEV2["Desenvolvedor com -Servicos SEFAZ"] -- proxy --> SEFAZ
+    API -- "só lê e grava linhas" --> CAD
+    API -- "só INSERT e SELECT" --> ALT
+    API -- "só INSERT e SELECT" --> ACE
+    API -. "sem privilégio" .-> CADEIA
       </pre>
     </div>
     <div class="cards">
-      <div class="card flat"><h3>FK só de ida</h3><ul><li>O serviço referencia o padrão. O padrão nunca referencia serviço nenhum.</li><li>Garantido por teste automatizado em todos os 6 ambientes.</li></ul></div>
-      <div class="card flat"><h3>REFERENCES não dá leitura</h3><ul><li>Na fixture, o schema <code>SEFAZ</code> (em <code>TESTE_DEV</code> e <code>DEV</code>) recebe <code>REFERENCES</code> e <code>SELECT</code> em concessões separadas.</li><li>Sem o <code>SELECT</code>, o <code>JOIN</code> falhava com <code>ORA-41900</code>.</li></ul></div>
-      <div class="card flat"><h3>Serviço é concessão explícita</h3><ul><li>Sem <code>-Servicos</code>, o perfil só enxerga o padrão.</li><li>Ter SEFAZ não dá Simples Nacional.</li></ul></div>
-      <div class="card flat"><h3>Só em TESTE_DEV e DEV</h3><ul><li>Os outros 4 ambientes têm os schemas de serviço, vazios.</li><li>Sincronizar estrutura entre ambientes ainda não existe.</li></ul></div>
+      <div class="card flat"><h3>Por que fica neste repositório</h3><ul><li>Quem cria uma tabela é dono dela e consegue apagar as linhas.</li><li>Com o dono sendo um schema em que ninguém loga, "a API só insere" é permissão do banco, não promessa do código.</li></ul></div>
+      <div class="card flat"><h3>Quem insere não escolhe nada</h3><ul><li>Um trigger numera cada linha sem buraco, carimba a hora do servidor e grava o hash junto com o da linha anterior.</li><li>Numeração, hora e hash forjados são ignorados.</li></ul></div>
+      <div class="card flat"><h3>Adulteração aparece</h3><ul><li>A view <code>V_LOG_ALTERACAO_QUEBRAS</code> aponta conteúdo alterado, linha do meio apagada e linhas do fim apagadas.</li><li>Vazia quer dizer corrente inteira.</li></ul></div>
+      <div class="card flat"><h3>Âncora fora do banco</h3><ul><li>Quem tem <code>DBA</code> conseguiria recalcular a corrente inteira. Por isso <code>ancorar-log.ps1</code> guarda o último número e hash no Vault.</li><li>A conferência contra o Vault denuncia esse ataque (testado fazendo o ataque de verdade).</li></ul></div>
     </div>
   </section>
 
   <section id="scripts" class="section">
     <span class="section-tag">Operação</span>
-    <h2>4 scripts PowerShell cobrem o dia a dia</h2>
+    <h2>12 scripts PowerShell cobrem o dia a dia</h2>
     <p class="desc">
       Ficam em <code>infra/scripts/</code>. Cada um é independente, sem biblioteca compartilhada.
     </p>
@@ -644,21 +645,83 @@ flowchart TB
     <div class="cards">
       <div class="card">
         <h3>create-team-member.ps1</h3>
-        <p class="where">-Username -Profile [-Roles] [-Servicos]</p>
+        <p class="where">-Username -Profile [-Nome] [-Cargo] [-Roles]</p>
         <ul>
           <li>Cria o usuário Oracle com senha temporária aleatória</li>
-          <li>Concede o acesso do perfil e, se pedido, os serviços</li>
+          <li>Concede o acesso do perfil</li>
           <li>Cria o login pessoal e a policy da pessoa no Vault</li>
           <li>A senha só serve para o 1º login</li>
+          <li>Cadastra a conta com nome e cargo no painel de contas</li>
         </ul>
       </div>
       <div class="card">
-        <h3>grant-service-access.ps1</h3>
-        <p class="where">-Username -Servicos</p>
+        <h3>create-api-account.ps1</h3>
+        <p class="where">-Username -Ambiente [-Papel] [-Responsavel] [-OutEnvFile]</p>
         <ul>
-          <li>Dá um serviço a quem já tem conta, sem recriar o usuário</li>
-          <li>Descobre sozinho os ambientes da pessoa, lendo <code>DBA_PROXIES</code></li>
-          <li>Rodar duas vezes não dá erro</li>
+          <li>Cria uma conta da API, com perfil de serviço e só <code>CREATE SESSION</code>. São duas por ambiente: <b>execução</b> (schema <code>_APP</code>, só lê e grava linhas) e <b>migração</b> (dona das tabelas, só na subida)</li>
+          <li>Entram por proxy; Produção fica de fora. Quem invadir a API herda a de execução, que não cria, altera nem apaga tabela</li>
+          <li>A senha vai para o Vault; <code>-OutEnvFile</code> gera um <code>.env</code> local para desenvolvimento</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>ancorar-log.ps1</h3>
+        <p class="where">[-Acao Ancorar|Conferir] [-Ambiente]</p>
+        <ul>
+          <li>Guarda no Vault o último número e hash do log de alterações de cada ambiente</li>
+          <li><code>-Acao Conferir</code> compara o banco com a âncora e sai com código 1 se algo mudou, sumiu ou encolheu</li>
+          <li>Recusa ancorar por cima de uma divergência</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>rotate-api-password.ps1</h3>
+        <p class="where">-Username [-OutEnvFile] [-EncerrarSenhaAntiga] [-Imediata]</p>
+        <ul>
+          <li>Troca a senha da API no Oracle, no Vault e na linha certa do <code>.env</code>, sem mostrá-la</li>
+          <li>Troca gradual do Oracle 23ai: a antiga vale até a API reiniciar, então ela não cai</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>apply-network-hardening.ps1</h3>
+        <p class="where">[-Desfazer]</p>
+        <ul>
+          <li>O banco passa a exigir cifra AES-256 e conferência SHA-256 em toda conexão pela rede</li>
+          <li>Trava a reconfiguração do listener; confere numa conexão de verdade e desfaz sozinho se falhar</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>remove-team-member.ps1</h3>
+        <p class="where">-Username -Motivo [-Apagar]</p>
+        <ul>
+          <li>Desliga quem saiu: tranca a conta, revoga proxies, roles e privilégios</li>
+          <li>Derruba as sessões abertas, inclusive por proxy; apaga login e segredos no Vault</li>
+          <li>Cadastro fica <code>DESLIGADA</code> com o motivo; vira alarme se for reaberta</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>rotina-diaria.ps1 + agendar-rotina.ps1</h3>
+        <p class="where">[-Horario] [-Remover]</p>
+        <ul>
+          <li>Todo dia às 9h: banco e Vault no ar, portas só na máquina, pendências das contas, log conferido e ancorado</li>
+          <li>Relatório em <code>infra/logs/</code> e aviso no Windows quando algo precisa de atenção</li>
+          <li>Roda só com o usuário logado, sem senha guardada</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>cadastro-de-contas.ps1</h3>
+        <p class="where">[-Acao Listar|Alertas|Liberacoes|Registrar]</p>
+        <ul>
+          <li>Painel de toda conta do banco: tipo, perfil, nome, cargo, ambientes e roles liberados</li>
+          <li>Situação da senha contra os 90 dias: em dia, vence em breve, vencida, troca pendente, bloqueada</li>
+          <li><code>-Acao Alertas</code> lista só as pendências e sai com código 1 (para agendar)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>enable-tde.ps1</h3>
+        <p class="where">nenhum obrigatório</p>
+        <ul>
+          <li>Liga a criptografia em disco (TDE): keystore com abertura automática e AES-256 em todas as tablespaces do Kawashi</li>
+          <li>Tablespace nova já nasce cifrada; a senha do keystore vai para o <code>.env</code> e o Vault</li>
+          <li>Idempotente; reinicia o banco uma vez</li>
         </ul>
       </div>
       <div class="card">
@@ -666,7 +729,7 @@ flowchart TB
         <p class="where">nenhum obrigatório</p>
         <ul>
           <li>Liga o engine <code>kawashi-secrets</code> e o login <code>userpass</code></li>
-          <li>Rodar sempre que o container do Vault for recriado</li>
+          <li>Rodar sempre que o container do Vault for recriado; repõe a cópia da senha do keystore do TDE</li>
         </ul>
       </div>
       <div class="card">
@@ -680,7 +743,7 @@ flowchart TB
       </div>
     </div>
 
-    <p class="note" style="margin-top:14px">Todos os quatro aceitam <code>-EnvFile</code> para apontar outro arquivo de configuração (padrão: <code>infra/.env</code>).</p>
+    <p class="note" style="margin-top:14px">Quase todos aceitam <code>-EnvFile</code> para apontar outro arquivo de configuração (padrão: <code>infra/.env</code>).</p>
 
     <h3>Como uma pessoa nova recebe acesso, sem senha passando por chat</h3>
     <ol class="steps">
@@ -694,17 +757,17 @@ flowchart TB
 
   <section id="testes" class="section">
     <span class="section-tag">Prova</span>
-    <h2>247 casos em 35 arquivos, contra Oracle e Vault reais</h2>
+    <h2>375 casos em 43 arquivos, contra Oracle e Vault reais</h2>
     <p class="desc">
       Nada de mock. Cada teste cria os próprios dados descartáveis e limpa tudo no final, mesmo se falhar
       no meio. Rodar um teste sozinho ou todos dá o mesmo resultado.
     </p>
 
-    <div class="bar" role="img" aria-label="Distribuição dos 247 casos: 6 unitários, 60 caixa-branca, 166 caixa-preta, 15 outros">
+    <div class="bar" role="img" aria-label="Distribuição dos 375 casos: 6 unitários, 61 caixa-branca, 286 caixa-preta, 22 outros">
       <i style="flex:6;background:var(--c4)"></i>
-      <i style="flex:60;background:var(--c2)"></i>
-      <i style="flex:166;background:var(--c1)"></i>
-      <i style="flex:15;background:var(--c3)"></i>
+      <i style="flex:61;background:var(--c2)"></i>
+      <i style="flex:286;background:var(--c1)"></i>
+      <i style="flex:22;background:var(--c3)"></i>
     </div>
     <div class="legend">
       <div class="lg">
@@ -714,18 +777,18 @@ flowchart TB
       </div>
       <div class="lg">
         <h3><i style="background:var(--c2)"></i>Caixa-branca</h3>
-        <p class="n">11 arquivos · 60 casos</p>
+        <p class="n">11 arquivos · 61 casos</p>
         <p>Olha por dentro: parâmetros do perfil, privilégios exatos de cada role, triggers, jobs, trilha de auditoria e o inventário do banco.</p>
       </div>
       <div class="lg">
         <h3><i style="background:var(--c1)"></i>Caixa-preta</h3>
-        <p class="n">20 arquivos · 166 casos</p>
+        <p class="n">27 arquivos · 286 casos</p>
         <p>Olha de fora: quem consegue entrar, onde, e o que pode fazer. Só importa a resposta do login e do SQL.</p>
       </div>
       <div class="lg">
         <h3><i style="background:var(--c3)"></i>Integração</h3>
-        <p class="n">3 arquivos · 15 casos</p>
-        <p>Onboarding completo em Oracle e Vault juntos, e a conta da API de ponta a ponta.</p>
+        <p class="n">4 arquivos · 22 casos</p>
+        <p>Onboarding completo em Oracle e Vault juntos, a conta da API de ponta a ponta e a rotina diária pelo Agendador.</p>
       </div>
     </div>
 
@@ -738,13 +801,16 @@ flowchart TB
       </ul></div>
       <div class="card flat"><ul>
         <li>Cada perfil alcança só os ambientes dele, em uma matriz perfil por ambiente</li>
-        <li>Quem não tem <code>-Servicos</code> não entra no schema de serviço</li>
-        <li>A FK nunca aponta do padrão para o serviço</li>
+        <li>No schema de log a API insere, mas não altera nem apaga</li>
+        <li>Linha de log alterada ou apagada por um DBA é acusada pela conferência</li>
+        <li>Uma marca gravada num ambiente não aparece em nenhum arquivo do banco (disco cifrado)</li>
       </ul></div>
       <div class="card flat"><ul>
         <li>Login, logoff, DDL e <code>GRANT</code> aparecem na trilha de auditoria</li>
         <li>Falha forçada do log cai no fallback sem travar ninguém</li>
         <li>3 onboardings ao mesmo tempo não se contaminam</li>
+        <li>Quem é desligado perde tudo na hora, inclusive as sessões que já estavam abertas por proxy</li>
+        <li>Toda conta criada aparece no painel com cargo e liberações; senha passando de 90 dias vira pendência</li>
       </ul></div>
     </div>
 
@@ -757,12 +823,12 @@ flowchart TB
 
 # um teste específico
 ./infra/tests/caixa-preta/Test-MatrizAcessoPorPerfil.ps1</pre>
-    <p class="note">Última rodada completa: 27/10/2026, banco recriado do zero, <strong>247 passaram, 0 falharam</strong>, em 249 segundos.</p>
+    <p class="note">Última rodada completa: 18/11/2026, <strong>375 passaram, 0 falharam</strong>.</p>
   </section>
 
   <section id="achados" class="section">
     <span class="section-tag">Achados</span>
-    <h2>20 itens no log: 15 bugs corrigidos e 5 achados</h2>
+    <h2>23 itens no log: 15 bugs corrigidos e 8 achados e decisões</h2>
     <p class="desc">
       Quase tudo isso só apareceu rodando de verdade, nunca lendo o código. O registro completo, com
       sintoma, causa e correção, está em <code>infra/docs/bugs-primeiro-teste.md</code>. Estes são seis
@@ -788,22 +854,22 @@ flowchart TB
    ├─ docker-compose.yml          <em>Oracle + Vault na rede kawashi-net</em>
    ├─ .env.example                <em>6 variáveis (o .env real fica fora do git)</em>
    ├─ oracle-init/                <em>11 scripts SQL, rodam 1x no primeiro boot</em>
-   ├─ oracle-network-config/      <em>trechos sqlnet.ora.append e listener.ora.append, aplicação manual</em>
-   ├─ scripts/                    <em>4 scripts PowerShell</em>
+   ├─ oracle-network-config/      <em>blocos do sqlnet.ora e do listener.ora, aplicados por apply-network-hardening.ps1</em>
+   ├─ scripts/                    <em>12 scripts PowerShell</em>
    ├─ docs/                       <em>5 documentos</em>
    │  ├─ arquitetura.md           <em>diagramas e o porquê de cada peça</em>
-   │  ├─ bugs-primeiro-teste.md   <em>os 20 achados, com sintoma, causa e correção</em>
+   │  ├─ bugs-primeiro-teste.md   <em>os 31 achados, com sintoma, causa e correção</em>
    │  ├─ criar-novo-usuario.md    <em>guia de quem dá o acesso</em>
    │  ├─ onboarding-novo-membro.md <em>guia de quem recebe o acesso</em>
-   │  └─ hardening-rede.md        <em>passo a passo do hardening de rede</em>
-   └─ tests/                      <em>35 arquivos de teste, 247 casos</em>
+   │  └─ hardening-rede.md        <em>conexão cifrada e listener travado: o que muda e como se prova</em>
+   └─ tests/                      <em>43 arquivos de teste, 375 casos</em>
       ├─ Run-AllTests.ps1
       ├─ lib/TestHelpers.ps1
       ├─ unitarios/  caixa-branca/  caixa-preta/  outros/</pre>
     <p class="note">
-      O hardening de rede (criptografia em trânsito e travar a reconfiguração remota do listener) está
-      pronto, mas não roda sozinho de propósito: é mudança em arquivo de rede do Oracle, e um erro ali
-      derruba o listener inteiro.
+      A conexão com o banco é cifrada (AES-256 e SHA-256 exigidos pelo servidor) e o listener não
+      aceita reconfiguração em tempo de execução. O <code>apply-network-hardening.ps1</code> aplica,
+      confere numa conexão de verdade e desfaz sozinho se algo falhar.
     </p>
   </section>
 
@@ -841,7 +907,7 @@ flowchart TB
     <div class="cards">
       <div class="card flat"><ul>
         <li><strong>Lista de IPs em fail-open.</strong> Só registra. Antes de bloquear, cadastrar o IP de todo mundo, inclusive o do engenheiro.</li>
-        <li><strong>Sem backup.</strong> Sem volume nomeado: <code>docker compose down -v</code> apaga os dados e a trilha de auditoria.</li>
+        <li><strong>Sem volume de dados.</strong> O banco inteiro mora dentro do container: <code>docker compose down</code> ou recriar o container (o que acontece ao mudar porta ou imagem) apaga os dados, a trilha de auditoria e a chave do TDE. <code>stop</code>/<code>start</code> preservam.</li>
       </ul></div>
       <div class="card flat"><ul>
         <li><strong>Vault em modo dev.</strong> Memória, sem persistência. <code>mlock</code> desligado por limitação do Docker Desktop.</li>
@@ -849,7 +915,7 @@ flowchart TB
       </ul></div>
       <div class="card flat"><ul>
         <li><strong>Isolamento só lógico.</strong> Os 6 ambientes dividem a mesma instância Oracle.</li>
-        <li><strong>Hardening de rede não aplicado.</strong> Pronto em <code>oracle-network-config/</code>, aplicação manual.</li>
+        <li><strong>Configuração de rede dentro do container.</strong> A conexão cifrada está aplicada, mas os arquivos moram no container: se ele for recriado, rode <code>apply-network-hardening.ps1</code> de novo.</li>
       </ul></div>
     </div>
 
@@ -857,14 +923,14 @@ flowchart TB
     <div class="cards">
       <div class="card flat"><h3>Como aplicar o repositório de tabelas</h3><ul><li>As regras sobem primeiro, as tabelas depois.</li><li>Script depois do bootstrap ou submódulo. Precisa de teste ao vivo.</li></ul></div>
       <div class="card flat"><h3>Onde mora "serviço lê todo o padrão"</h3><ul><li>Hoje é um <code>GRANT SELECT</code> em loop que roda uma vez, no 1º boot.</li><li>Não alcança tabelas padrão criadas depois.</li></ul></div>
-      <div class="card flat"><h3>Conta de API por ambiente</h3><ul><li>Hoje existe uma só conta de API, sem ligação com os 6 ambientes.</li><li>Falta o equivalente do onboarding de pessoas, para contas de API.</li></ul></div>
+      <div class="card flat"><h3>Conta de API em Produção</h3><ul><li>A conta de API já existe por ambiente, mas Produção ficou de fora, como as pessoas.</li><li>Falta decidir se a API em produção abre uma exceção à regra "ninguém entra em Produção por proxy".</li></ul></div>
     </div>
   </section>
 
   <footer class="footer">
-    Conferido em 27/10/2026 contra o repositório <code>regras-banco-usp</code>, no commit
-    <code>a57ce0b</code> (separação entre regras e tabelas já aplicada). Os números de teste vêm de uma
-    execução completa do <code>Run-AllTests.ps1</code> com o mesmo código, feita pouco antes do commit.
+    Conferido em 27/10/2026 contra o repositório <code>regras-banco-usp</code>, já com a conta de API
+    incluída. Os números de teste vêm de uma execução completa do <code>Run-AllTests.ps1</code>
+    nesse estado.
   </footer>
 </div>
 

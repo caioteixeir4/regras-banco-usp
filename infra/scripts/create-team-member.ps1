@@ -43,16 +43,6 @@
     ambiente TESTE, compartilhado por qualquer time). Virou EstagiarioDev/EstagiarioInfra,
     espelhando a separacao que ja existia entre Desenvolvedor/Infra um nivel acima.
 
-.PARAMETER Servicos
-    Liberacao ADITIVA e INDEPENDENTE do -Profile para schemas de SERVICO (segmentacao por dominio
-    de negocio dentro de cada ambiente - ver secao 2.1 de infra/oracle-init/09_environments.sql).
-    Para cada servico pedido, concede CONNECT THROUGH no schema KAWASHI_ENV_<AMBIENTE>_<SERVICO>
-    de TODO ambiente que o -Profile escolhido ja alcanca - ex: -Profile Desenvolvedor -Servicos
-    SEFAZ da proxy em KAWASHI_ENV_DEV_SEFAZ E KAWASHI_ENV_HOMOLOG_SEFAZ (porque Desenvolvedor
-    alcanca os dois), sem tocar em nenhum schema SIMPLES_NACIONAL. Nao informar -Servicos
-    continua sendo valido - a pessoa so enxerga as tabelas PADRAO do(s) ambiente(s) do seu perfil.
-    Nao se aplica ao perfil HomologViewer (nao usa proxy em nenhum ambiente).
-
 .PARAMETER Roles
     Roles Oracle extras a conceder, alem do que o -Profile ja concede. Use para excecoes
     pontuais - o caminho normal e o -Profile cobrir tudo que a pessoa precisa. Restrito as
@@ -69,9 +59,6 @@
 .EXAMPLE
     ./create-team-member.ps1 -Username MARIA_QA -Profile HomologViewer
 
-.EXAMPLE
-    ./create-team-member.ps1 -Username PEDRO_SEFAZ -Profile Desenvolvedor -Servicos SEFAZ
-
 .NOTES
     Requer Docker Desktop com os containers kawashi-oracle e kawashi-vault no ar
     (docker compose up), e o engine KV "kawashi-secrets" ja habilitado no Vault.
@@ -86,11 +73,6 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('EstagiarioDev', 'EstagiarioInfra', 'Desenvolvedor', 'Infra', 'HomologViewer')]
     [string]$Profile,
-
-    # Liberacao aditiva de schema de SERVICO (ver .PARAMETER Servicos acima) -
-    # independente do -Profile, nao concede acesso a nenhum ambiente por si so.
-    [ValidateSet('SEFAZ', 'SIMPLES_NACIONAL')]
-    [string[]]$Servicos = @(),
 
     # CORRIGIDO (achado real, nao hipotetico: testado ao vivo concedendo DBA a
     # um Estagiario novo via "-Roles @('DBA')" e funcionou sem nenhuma
@@ -109,10 +91,23 @@ param(
     [ValidateSet('ROLE_KAWASHI_DEVELOPER', 'ROLE_KAWASHI_INFRA', 'ROLE_KAWASHI_HOMOLOG_VIEWER', 'KAWASHI_READONLY', 'KAWASHI_READWRITE')]
     [string[]]$Roles = @(),
 
-    [string]$EnvFile = (Join-Path $PSScriptRoot '..\.env')
+    # Nome e cargo da pessoa, gravados no cadastro de contas (SYS.KAWASHI_CONTA, ver
+    # infra/oracle-init/12_cadastro_de_contas.sql). Opcionais para nao quebrar automacao, mas a
+    # conta sem eles aparece com pendencia no painel (cadastro-de-contas.ps1 -Acao Alertas).
+    # So letras, numeros, espaco e pontuacao simples: o valor entra num comando SQL.
+    [ValidatePattern("^[\p{L}0-9 .,\-/()']{1,200}$")]
+    [string]$Nome,
+
+    [ValidatePattern("^[\p{L}0-9 .,\-/()']{1,100}$")]
+    [string]$Cargo,
+
+    [string]$EnvFile
 )
 
 $ErrorActionPreference = 'Stop'
+# Padrao do -EnvFile calculado AQUI, e nao no bloco param: com [CmdletBinding()], quando o script
+# e chamado com "powershell -File", o $PSScriptRoot ainda esta vazio nos valores padrao do param.
+if (-not $EnvFile) { $EnvFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\.env' }
 $Username = $Username.ToUpper()
 
 # CORRIGIDO (achado testando ao vivo): o PowerShell 5.1 sempre insere um BOM
@@ -135,7 +130,15 @@ function Invoke-SqlPlus {
     $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Sql)
     $b64 = [Convert]::ToBase64String($bytes)
     $innerCmd = 'echo ' + $b64 + ' | base64 -d | sqlplus -s "$ORACLE_CONNSTR"'
-    return docker exec -i -e ORACLE_CONNSTR="$ConnectString" kawashi-oracle sh -c "$innerCmd" 2>&1
+    # NLS_LANG em UTF-8: sem isso o sqlplus trata o texto como ASCII e "Jose" com acento viraria "Jos?".
+    return docker exec -i -e ORACLE_CONNSTR="$ConnectString" -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kawashi-oracle sh -c "$innerCmd" 2>&1
+}
+
+# Texto livre (nome, cargo) como literal SQL: NULL se vazio, aspas simples dobradas.
+function ConvertTo-LiteralSql {
+    param([string]$Texto)
+    if ([string]::IsNullOrWhiteSpace($Texto)) { return 'NULL' }
+    return "'" + $Texto.Trim().Replace("'", "''") + "'"
 }
 
 function Write-VaultPolicy {
@@ -182,47 +185,6 @@ function Get-ProfileStatements {
             )
         }
     }
-}
-
-# Lista os "nomes curtos" de ambiente (sem o prefixo KAWASHI_ENV_) que um
-# -Profile ja alcanca via proxy - e com essa lista que -Servicos monta os
-# nomes dos schemas de servico correspondentes (KAWASHI_ENV_<AMBIENTE>_<SERVICO>).
-# HomologViewer retorna lista vazia de proposito: esse perfil nao usa proxy em
-# nenhum ambiente (so a role de leitura), entao nao tem onde anexar um servico.
-function Get-AmbientesDoPerfil {
-    param([string]$Profile)
-
-    switch ($Profile) {
-        'EstagiarioDev'   { return @('TESTE_DEV') }
-        'EstagiarioInfra' { return @('TESTE_INFRA') }
-        'Desenvolvedor'   { return @('DEV', 'HOMOLOG') }
-        'Infra'           { return @('INFRA', 'HOMOLOG') }
-        'HomologViewer'   { return @() }
-    }
-}
-
-# Traduz -Servicos em GRANTs de proxy aditivos (ver secao 2.1 e 3 de
-# infra/oracle-init/09_environments.sql) - um por (servico x ambiente que o
-# -Profile ja alcanca). Lanca erro cedo (antes de qualquer CREATE USER) se
-# -Servicos for pedido pra um perfil que nao alcanca ambiente nenhum via
-# proxy, em vez de silenciosamente nao conceder nada.
-function Get-ServicoStatements {
-    param([string]$Profile, [string[]]$Servicos, [string]$Username)
-
-    if ($Servicos.Count -eq 0) { return @() }
-
-    $ambientes = Get-AmbientesDoPerfil -Profile $Profile
-    if ($ambientes.Count -eq 0) {
-        throw "-Servicos nao se aplica ao perfil '$Profile' (esse perfil nao usa proxy authentication em nenhum ambiente - ver 09_environments.sql)."
-    }
-
-    $statements = @()
-    foreach ($servico in $Servicos) {
-        foreach ($ambiente in $ambientes) {
-            $statements += "ALTER USER KAWASHI_ENV_${ambiente}_${servico} GRANT CONNECT THROUGH $Username;"
-        }
-    }
-    return $statements
 }
 
 function Get-DotEnv {
@@ -296,11 +258,7 @@ Write-Host "-> Criando usuario Oracle e aplicando politica de seguranca (perfil:
 
 $profileStatements = (Get-ProfileStatements -Profile $Profile -Username $Username) -join "`n"
 $extraRoleStatements = ($Roles | ForEach-Object { "GRANT $_ TO $Username;" }) -join "`n"
-# Calculado ANTES de qualquer coisa ser criada no Oracle: se -Servicos nao se
-# aplicar ao -Profile escolhido, o erro (ver Get-ServicoStatements) precisa
-# interromper o script sem deixar nenhum usuario pela metade.
-$servicoStatements = (Get-ServicoStatements -Profile $Profile -Servicos $Servicos -Username $Username) -join "`n"
-$grantStatements = @($profileStatements, $extraRoleStatements, $servicoStatements) -join "`n"
+$grantStatements = @($profileStatements, $extraRoleStatements) -join "`n"
 
 # CORRIGIDO (achado em infra/tests/caixa-preta/Test-UsuarioDuplicado.ps1): por
 # padrao, o SQL*Plus NAO para no primeiro erro de um script - ele so imprime o
@@ -320,6 +278,7 @@ ALTER USER $Username QUOTA 500M ON TS_KAWASHI_DATA;
 GRANT CREATE SESSION TO $Username;
 $grantStatements
 ALTER USER $Username PASSWORD EXPIRE;
+EXEC SYS.KAWASHI_REGISTRAR_CONTA('$Username', 'PESSOA', '$Profile', $(ConvertTo-LiteralSql $Nome), $(ConvertTo-LiteralSql $Cargo), NULL);
 EXIT;
 "@
 
@@ -393,9 +352,8 @@ Write-Host ""
 Write-Host "LEMBRETE: se a whitelist de IP (KAWASHI_ALLOWED_IPS) ja estiver em modo de" -ForegroundColor Yellow
 Write-Host "bloqueio ativo, cadastre o IP da maquina dessa pessoa la ANTES do primeiro login dela." -ForegroundColor Yellow
 Write-Host "Perfil: $Profile"
+if ($Cargo) { Write-Host "Cargo: $Cargo" }
+else { Write-Host "AVISO: conta cadastrada SEM cargo. Complete com: ./cadastro-de-contas.ps1 -Acao Registrar -Username $Username -Nome '...' -Cargo '...'" -ForegroundColor Yellow }
 if ($Roles.Count -gt 0) {
     Write-Host "Roles extras concedidas: $($Roles -join ', ')"
-}
-if ($Servicos.Count -gt 0) {
-    Write-Host "Servicos liberados: $($Servicos -join ', ')"
 }

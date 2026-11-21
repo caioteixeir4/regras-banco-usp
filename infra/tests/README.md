@@ -11,10 +11,14 @@ alguém precise descobrir na mão.
 2. Vault inicializado **sempre que o container for recriado ou reiniciado** — o Vault roda em
    modo `-dev` (em memória, sem persistência — débito técnico intencional, ver
    `scripts/vault-init.ps1`), então o engine `kawashi-secrets` e o método `userpass` somem a
-   cada restart:
+   cada restart. O `Run-AllTests.ps1` já roda o `vault-init.ps1` (idempotente) antes da suíte;
+   para rodar **um teste direto**, ou usar os scripts de criação de usuário, rode você mesmo:
    ```powershell
    ./scripts/vault-init.ps1
    ```
+   Atenção: o restart também apaga os **segredos guardados** (por exemplo as credenciais das
+   contas de API em `kawashi-secrets/api/...`). As contas continuam existindo no Oracle; só a
+   cópia da senha no Vault some.
 3. `infra/.env` preenchido (`ENGINEER_USER`, `ENGINEER_USER_PASSWORD`, `VAULT_DEV_ROOT_TOKEN_ID`).
 
 ## Como rodar
@@ -43,18 +47,16 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (35 arquivos, 247 casos — eram 250 antes da separação do
-repositório de tabelas, ver "Rodada" mais abaixo; versões anteriores desta doc diziam "37
-arquivos", contagem errada que já existia antes da separação — o número real de `Test-*.ps1` em
-disco sempre foi 35):
+Arquivos de teste atuais, por categoria (43 arquivos, 375 casos na última execução completa, 20/11/2026). O
+histórico da contagem está nas rodadas abaixo: a remoção dos schemas de serviço tirou 3 arquivos, e
+o schema de log trouxe 1 arquivo com 16 casos.
 
 - `unitarios/`: `Test-PasswordVerifyFunction.ps1`
 - `caixa-branca/`: `Test-ProfileEHardeningInternals.ps1`, `Test-HomologAutograntTrigger.ps1`,
   `Test-RolesPrivilegiosInternos.ps1`, `Test-SpringAppUserHardeningInternals.ps1`,
   `Test-TrilhaSegurancaPropria.ps1`, `Test-ObjetosInvalidosEJobsSaudaveis.ps1`,
   `Test-BlacklistFerramentasDados.ps1`, `Test-TrilhaSegurancaFailover.ps1`,
-  `Test-ConsistenciaLoginRepetido.ps1`, `Test-InventarioDeSeguranca.ps1`,
-  `Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`
+  `Test-ConsistenciaLoginRepetido.ps1`, `Test-InventarioDeSeguranca.ps1`, `Test-PortasSoNaMaquinaLocal.ps1`
 - `caixa-preta/`: `Test-BloqueioPorTentativasInvalidas.ps1`, `Test-MatrizAcessoPorPerfil.ps1`,
   `Test-ConexaoNovoUsuario.ps1`, `Test-UsuarioDuplicado.ps1`, `Test-PermissoesCrudPorAmbiente.ps1`,
   `Test-PermissoesHomologViewerSomenteLeitura.ps1`, `Test-BloqueioOsUserInseguro.ps1`,
@@ -63,9 +65,11 @@ disco sempre foi 35):
   `Test-ReusoSenhaImediatoBloqueado.ps1`, `Test-CriacaoConcorrente.ps1`,
   `Test-CriacaoObjetosBloqueadaPorPerfil.ps1`, `Test-RolesPerigosasBloqueadas.ps1`,
   `Test-DropPluggableDatabaseBloqueado.ps1`, `Test-ControleColetivoDentroDoAmbiente.ps1`,
-  `Test-SegmentacaoPorServico.ps1`, `Test-ConcessaoServicoUsuarioExistente.ps1`
+  `Test-ContaApiViaProxy.ps1`, `Test-SchemaLogSomenteInsercao.ps1`, `Test-AncoraDoLog.ps1`,
+  `Test-CriptografiaEmDisco.ps1`, `Test-CadastroDeContas.ps1`, `Test-DesligamentoDePessoa.ps1`,
+  `Test-RotacaoSenhaApi.ps1`, `Test-ConexaoCifrada.ps1`, `Test-SchemaLogin.ps1`
 - `outros/`: `Test-OnboardingEndToEnd.ps1`, `Test-ConexaoAplicacaoSpring.ps1`,
-  `Test-LimiteSessoesAplicacao.ps1`
+  `Test-LimiteSessoesAplicacao.ps1`, `Test-RotinaDiaria.ps1`
 
 ### Rodada "sem bug novo" (confirmam que o que existe já funciona)
 
@@ -173,6 +177,147 @@ criado `infra/scripts/grant-service-access.ps1` pra cobrir o caso de alguém que
   certa pra "em quais ambientes JOAO já entra" é `SELECT client FROM dba_proxies WHERE proxy =
   'JOAO'` - ver item 19 de `bugs-primeiro-teste.md`.
 
+### Rodada "conta de API por ambiente"
+
+Fecha o ponto em aberto da separação de repositórios: a API Java (repositório
+`tabelas-api-banco-usp`) precisa de uma conta própria pra conectar, e até aqui só existia a
+`KAWASHI_SPRING_USER`, sem relação com os 6 ambientes. O modelo agora é o das pessoas (proxy no
+schema do ambiente), com o perfil de serviço. Criado `infra/scripts/create-api-account.ps1`.
+
+- `Test-ContaApiViaProxy.ps1` (novo, caixa-preta, 15 casos): as credenciais ficam no Vault; o
+  login via proxy entra como o schema do ambiente e o Oracle registra a conta como `PROXY_USER`;
+  a sessão proxyada consegue criar e apagar tabela (o Flyway da API precisa disso); a conta
+  liberada em `TESTE_DEV` não alcança `DEV` nem `PROD`; usa `KAWASHI_SERVICE_PROFILE` e está
+  `OPEN`; tem só `CREATE SESSION` e nenhuma role; 8 sessões proxyadas simultâneas não são
+  rejeitadas; `-Servicos` é aditivo e por serviço; e as falhas não deixam nada pela metade
+  (conta duplicada, `-Ambiente PROD`, nome reservado, `.env` já existente). Ver item 21 de
+  `bugs-primeiro-teste.md` (decisão de arquitetura).
+- A suíte esperada passa de 247 para **262** casos, de 35 para **36** arquivos.
+
+### Rodada "sai o SEFAZ, entra o schema de log"
+
+Os schemas de serviço de exemplo (`SEFAZ`, `SIMPLES_NACIONAL`), a fixture `CLIENTE` +
+`CONFIGURACAO_FISCAL`, o parâmetro `-Servicos` e o `grant-service-access.ps1` foram removidos: eram
+só material de teste (item 22 de `bugs-primeiro-teste.md`). As rodadas acima que falam deles ficam
+como histórico.
+
+- Saíram `Test-SegmentacaoPorServico.ps1`, `Test-ConcessaoServicoUsuarioExistente.ps1` e
+  `Test-InvarianteFkPadraoNuncaReferenciaServico.ps1`, e os 3 casos de `-Servicos` de
+  `Test-ContaApiViaProxy.ps1` (que ficou com 12).
+- `Test-SchemaLogSomenteInsercao.ps1` (novo, caixa-preta, 16 casos): entra como uma conta de API de
+  verdade no schema de log (`oracle-init/11_schema_log.sql`) e confirma que ela insere, mas não
+  altera, não apaga, não esvazia, não desliga o gatilho, não enxerga a tabela de controle e não loga
+  no schema; que numeração, hora e hash forjados por quem insere são ignorados; e que a view de
+  conferência acusa as três adulterações feitas como DBA (conteúdo alterado, linha do meio apagada,
+  última linha apagada). No fim devolve a corrente do ambiente de teste ao estado inicial.
+- `Run-AllTests.ps1` agora roda o `vault-init.ps1` antes (o Vault em modo dev perde tudo a cada
+  restart) e conta um arquivo de teste que aborta como uma falha, em vez de derrubar a suíte sem
+  resumo.
+- Total da suíte: **262** casos em **34** arquivos.
+
+### Rodada "a API deixa de ser dona das tabelas, e o log ganha âncora"
+
+Item 23 de `bugs-primeiro-teste.md`.
+
+- `Test-ContaApiViaProxy.ps1` (de 12 para 16 casos): a conta padrão agora é a de **execução**, que
+  entra no schema `_APP`; o teste confirma que ela não cria tabela (nem no `_APP` nem no schema do
+  ambiente) e não entra como dona, que a conta de **migração** (`-Papel Migracao`) cria e apaga
+  tabela e não entra no `_APP`, e que o `-OutEnvFile` acrescenta a segunda conta ao mesmo arquivo
+  sem trocar a primeira.
+- `Test-SchemaLogSomenteInsercao.ps1` (de 16 para 17): passa a usar a conta de execução e confirma
+  que a de migração não lê nem grava no log.
+- `Test-AncoraDoLog.ps1` (novo, caixa-preta, 8 casos): ancora o log no Vault e faz o ataque de
+  verdade. Como DBA, altera uma linha ancorada e recalcula a corrente inteira; confirma primeiro que
+  a view interna volta a ficar vazia (o encadeamento sozinho não vê) e depois que a conferência
+  contra o Vault denuncia. Cobre também o DBA que apaga o fim do log, e que o script se recusa a
+  ancorar por cima de uma divergência.
+- Total da suíte: **275** casos em **35** arquivos.
+
+### Rodada "disco cifrado e cadastro de contas"
+
+Itens 24 e 25 de `bugs-primeiro-teste.md`.
+
+- `Test-CriptografiaEmDisco.ps1` (novo, caixa-preta, 12 casos): o keystore está aberto e abre
+  sozinho no boot, todas as `TS_KAWASHI_*` e a `USERS` estão cifradas em AES-256, tablespace nova
+  nasce cifrada. E a prova por fora: grava uma marca num ambiente e procura byte a byte em todos os
+  arquivos do banco (dados, undo, redo); não acha. Controle positivo: a mesma marca gravada na
+  `SYSAUX` (sem cifra) **é** achada, senão "não achei" não provaria nada.
+- `Test-CadastroDeContas.ps1` (novo, caixa-preta, 24 casos): pessoa e conta de API criadas pelos
+  scripts entram no cadastro (com nome acentuado e apóstrofo intactos); `GRANT` dado por fora aparece
+  e some do painel na hora; conta criada por fora aparece como `SEM CADASTRO`; a regra dos 90 dias nas
+  fronteiras (74, 75, 90, 91 dias) e por status; a conta de API não expira para o Oracle mas o painel
+  cobra; nem o DBA altera a tabela direto; conta comum não lê o painel; cargo com SQL é recusado.
+- `Test-InventarioDeSeguranca.ps1`: o inventário passou a esperar `KAWASHI_CONTA`,
+  `KAWASHI_REGISTRAR_CONTA` e `KAWASHI_SITUACAO_DA_SENHA`.
+- `Run-AllTests.ps1` apaga, no fim, o cadastro das contas descartáveis (`TST_*`) que já não existem.
+- Total da suíte: **311** casos em **37** arquivos, todos passando.
+
+### Rodada "portas, desligamento e rotina diária"
+
+Itens 26, 27 e 28 de `bugs-primeiro-teste.md`.
+
+- `Test-PortasSoNaMaquinaLocal.ps1` (novo, caixa-branca, 3 casos): o `docker-compose.yml` publica o
+  banco e o Vault só em `127.0.0.1`. O container que está rodando é conferido ao vivo pela rotina
+  diária, que acusa porta exposta até ele ser recriado.
+- `Test-DesligamentoDePessoa.ps1` (novo, caixa-preta, 21 casos): abre duas sessões **reais** (uma
+  direta, uma por proxy) e desliga a pessoa. Confere que os logins são recusados, que não sobra proxy,
+  role, privilégio nem permissão, que as duas sessões caem (contadas por uma marca própria do teste,
+  e não pela mesma busca da procedure), que o Vault foi limpo, que o painel mostra `DESLIGADA` e vira
+  alarme se a conta for reaberta ou receber acesso; as recusas (API, ADMIN, DBA, inexistente), rodar
+  de novo e o `-Apagar` com recriação do mesmo nome. Define `$ErrorActionPreference = 'Continue'`:
+  no modo `Stop` do runner, o "No value found" do Vault (que é o resultado esperado) virava exceção.
+- `Test-RotinaDiaria.ps1` (novo, outros, 7 casos): roda a rotina com `-File` (como o Agendador),
+  confere relatório, âncoras nos 6 ambientes e o código de saída; planta uma conta criada por fora e
+  confere que é acusada; agenda e tira uma tarefa de teste no Agendador do Windows.
+- `Test-InventarioDeSeguranca.ps1`: passou a esperar `KAWASHI_DESLIGAR_CONTA`.
+- Total da suíte: **342** casos em **40** arquivos.
+
+### Rodada "troca da senha da API e conexão cifrada"
+
+Itens 29 e 30 de `bugs-primeiro-teste.md`.
+
+- `Test-RotacaoSenhaApi.ps1` (novo, caixa-preta, 13 casos): troca a senha de uma conta de API com um
+  `.env` de teste. Vault e `.env` ficam iguais e diferentes da antiga, só a linha da senha muda no
+  `.env`, nenhuma senha aparece na saída. Durante a troca gradual a antiga **e** a nova entram (a API
+  rodando não cai) e o painel mostra a pendência; uma segunda troca no meio é recusada;
+  `-EncerrarSenhaAntiga` corta a antiga; `-Imediata`; o segredo é regravado completo se o Vault
+  tiver sido reiniciado; recusa `.env` de outra conta (nada muda) e conta de pessoa. Conferido
+  quebrando de propósito: sem a troca gradual no perfil, 4 casos falham.
+- `Test-ConexaoCifrada.ps1` (novo, caixa-preta, 10 casos): conexões pela rede de verdade negociam
+  AES256 e SHA256; um cliente que recusa cifra, ou a conferência de integridade, é barrado
+  (`ORA-12660`); o listener recusa `SET` (`TNS-12508`); rodar de novo não duplica o bloco; a conexão
+  local do SYSDBA segue funcionando. **Controle:** desfaz a configuração, confirma que o mesmo
+  cliente teimoso entra, e aplica de novo.
+- Total da suíte: **365** casos em **42** arquivos, todos passando.
+
+### Rodada "login da aplicação"
+
+Item 31 de `bugs-primeiro-teste.md`.
+
+- `Test-SchemaLogin.ps1` (novo, caixa-preta, 10 casos): os 12 schemas `_LOGIN`/`_SESSAO` sem login
+  possível; as permissões EXATAS da conta de execução (nenhum DELETE); a conta de migração sem nada
+  (nem lê os hashes de senha); a API lê os parâmetros mas não altera, e não apaga token nem log;
+  mudança de parâmetro pelo DBA vira linha no `LOG_SEGURANCA` com valor antigo, novo e quem mudou;
+  número e hash forjados ignorados; adulteração aparece na view de quebras; hora em UTC; o job de
+  limpeza apaga só o vencido; a procedure da chave `USUARIO → PESSOA` só é chamável pelo schema do
+  ambiente.
+- `Test-InventarioDeSeguranca.ps1`: passou a esperar `KAWASHI_LIGAR_LOGIN_PESSOA` e o job
+  `KAWASHI_LIMPEZA_SESSAO_JOB`.
+- Total da suíte: **375** casos em **43** arquivos, todos passando.
+
+### Rodada "login por passkey" (20/11/2026)
+
+Itens 31 (complemento), 32 e 33 de `bugs-primeiro-teste.md`.
+
+- `Test-SchemaLogin.ps1` reescrito para o modelo sem senha: as permissões EXATAS agora são usuário,
+  passkey, convite, código de recuperação, token, desafio e bloqueio de IP (ler, criar, alterar) e
+  parâmetros (só ler), ainda sem nenhum DELETE; 10 parâmetros; a conta de migração não lê nem os
+  e-mails nem as chaves das passkeys; o job de limpeza apaga também o desafio vencido há mais de 1 dia.
+  Conferido quebrando de propósito: com um `GRANT DELETE` a mais em `PASSKEY`, o caso das permissões
+  falha (desfeito em seguida).
+- `Run-AllTests.ps1` e oito scripts de `infra/scripts` passaram a funcionar com `powershell -File`
+  (item 32).
+- Total da suíte: **375** casos em **43** arquivos, todos passando (445 s).
 ### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 
 - `Test-TrilhaSegurancaFailover.ps1`: força `KAWASHI_WRITE_SECURITY_LOG` a falhar de verdade na

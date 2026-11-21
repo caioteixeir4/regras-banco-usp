@@ -142,6 +142,11 @@ CREATE PROFILE KAWASHI_SERVICE_PROFILE LIMIT
     SESSIONS_PER_USER          50
     IDLE_TIME                  UNLIMITED
     CONNECT_TIME               UNLIMITED
+    -- Troca GRADUAL de senha (Oracle 23ai): por ate 1 dia depois de uma troca, a senha antiga e a
+    -- nova valem juntas. E o que deixa trocar a senha da API (rotate-api-password.ps1) sem derrubar
+    -- a aplicacao no meio: ela continua com a antiga ate ser reiniciada com a nova, e o script
+    -- encerra a antiga (ALTER USER ... EXPIRE PASSWORD ROLLOVER PERIOD) logo depois.
+    PASSWORD_ROLLOVER_TIME     1
     PASSWORD_VERIFY_FUNCTION   KAWASHI_PASSWORD_VERIFY;
 
 -- #########################################################

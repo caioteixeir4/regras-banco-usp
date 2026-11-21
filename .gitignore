@@ -1,1 +1,4 @@
 infra/.env
+
+# Relatorios da rotina diaria (infra/scripts/rotina-diaria.ps1): gerados em cada maquina, nao vao para o git
+infra/logs/

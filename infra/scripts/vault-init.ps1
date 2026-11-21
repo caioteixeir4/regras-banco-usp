@@ -62,10 +62,13 @@
 
 [CmdletBinding()]
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot '..\.env')
+    [string]$EnvFile
 )
 
 $ErrorActionPreference = 'Stop'
+# Padrao do -EnvFile calculado AQUI, e nao no bloco param: com [CmdletBinding()], quando o script
+# e chamado com "powershell -File", o $PSScriptRoot ainda esta vazio nos valores padrao do param.
+if (-not $EnvFile) { $EnvFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\.env' }
 
 # Nome do path onde os segredos da Kawashi ficam guardados (compartilhado com
 # create-team-member.ps1 - se mudar aqui, tem que mudar la tambem).
@@ -174,6 +177,22 @@ if ($authJaExiste) {
     Write-Host "   Nao existe ainda - habilitando..."
     Invoke-VaultCommand auth enable userpass | Out-Null
     Write-Host "   Habilitado." -ForegroundColor Green
+}
+
+# ---------------------------------------------------------------------------
+# 3. Copia da senha do keystore do TDE (criptografia em disco)
+#    O enable-tde.ps1 guarda a senha no .env e no Vault. Como o Vault de
+#    desenvolvimento perde tudo a cada restart, a copia e reposta aqui a partir
+#    do .env. Nada acontece se o TDE ainda nao foi ligado.
+# ---------------------------------------------------------------------------
+if ($envMap.ContainsKey('TDE_KEYSTORE_PASSWORD') -and $envMap['TDE_KEYSTORE_PASSWORD']) {
+    Write-Host "-> Repondo a copia da senha do keystore do TDE em '$KvEnginePath/tde'..."
+    $ErrorActionPreference = 'Continue'
+    docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv put "$KvEnginePath/tde" "keystore_password=$($envMap['TDE_KEYSTORE_PASSWORD'])" 2>&1 | Out-Null
+    $okTde = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = 'Stop'
+    if ($okTde) { Write-Host "   Guardada." -ForegroundColor Green }
+    else { Write-Host "   AVISO: nao consegui guardar a copia no Vault; a senha continua no .env." -ForegroundColor Yellow }
 }
 
 Write-Host ""

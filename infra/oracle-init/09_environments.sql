@@ -34,12 +34,17 @@ ALTER SESSION SET CONTAINER = FREEPDB1;
 -- arquitetura de hospedagem (local vs AWS) for decidida - fica registrado
 -- como debito tecnico intencional, igual fizemos com o Vault em modo dev.
 --
--- TODO (reconciliar futuramente): o usuario de aplicacao do Spring Boot
+-- ATUALIZACAO: a API agora entra nos ambientes pelo MESMO caminho das pessoas (proxy no
+-- schema do ambiente), com uma conta de servico criada por infra/scripts/create-api-account.ps1
+-- (ver item 21 de infra/docs/bugs-primeiro-teste.md). Producao ficou de fora, igual as pessoas.
+--
+-- TODO (continua em aberto): o usuario de aplicacao do Spring Boot
 -- (APP_USER / KAWASHI_SPRING_USER, ver 06_access_management.sql) foi criado ANTES
 -- desta conversa sobre ambientes, com seu proprio schema/tablespace
--- (TS_KAWASHI_DATA). Falta decidir: quando a aplicacao for de fato ao ar, ela
--- deve conectar contra KAWASHI_ENV_PROD (o schema de producao "de verdade"
--- deste modelo), ou o KAWASHI_SPRING_USER atual continua sendo uma coisa a parte?
+-- (TS_KAWASHI_DATA), e segue existindo. Falta decidir: quando a aplicacao for de fato ao ar,
+-- ela deve conectar contra KAWASHI_ENV_PROD (o schema de producao "de verdade"
+-- deste modelo, o que exigiria uma excecao explicita a regra de que ninguem alcanca
+-- producao por proxy), ou o KAWASHI_SPRING_USER atual continua sendo uma coisa a parte?
 -- Nao decidimos isso ainda - resolver antes de colocar dados reais em producao.
 
 -- #########################################################
@@ -51,12 +56,6 @@ ALTER SESSION SET CONTAINER = FREEPDB1;
 -- consegue gravar em nenhum outro ambiente, mesmo que tente.
 -- MAXSIZE em todos: mesma razao do 01_setup_kawashi.sql - sem teto, um erro de
 -- estagiario/dev pode encher o disco da maquina inteira, nao so o ambiente dele.
---
--- Os schemas de SERVICO criados na secao 2.1 (SEFAZ, SIMPLES_NACIONAL, etc.)
--- NAO ganham tablespace proprio - moram no MESMO tablespace fisico do
--- ambiente "pai" deles. Criar 12 tablespaces (6 ambientes x 2 servicos) só
--- pra repetir um isolamento fisico que este projeto ja decidiu nao perseguir
--- ainda (ver Technical Debts do README) nao traria beneficio real agora.
 CREATE TABLESPACE TS_KAWASHI_ENV_TESTE_DEV   DATAFILE 'ts_kawashi_env_teste_dev.dbf'   SIZE 50M  AUTOEXTEND ON MAXSIZE 1G;
 CREATE TABLESPACE TS_KAWASHI_ENV_TESTE_INFRA DATAFILE 'ts_kawashi_env_teste_infra.dbf' SIZE 50M  AUTOEXTEND ON MAXSIZE 1G;
 CREATE TABLESPACE TS_KAWASHI_ENV_DEV         DATAFILE 'ts_kawashi_env_dev.dbf'         SIZE 50M  AUTOEXTEND ON MAXSIZE 1G;
@@ -87,59 +86,38 @@ GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDU
     TO KAWASHI_ENV_TESTE_DEV, KAWASHI_ENV_TESTE_INFRA, KAWASHI_ENV_DEV, KAWASHI_ENV_INFRA, KAWASHI_ENV_HOMOLOG, KAWASHI_ENV_PROD;
 
 -- #########################################################
--- 2.1 SCHEMAS DE SERVICO - segmentacao por servico DENTRO de cada ambiente
+-- 2.1 SCHEMA DE EXECUCAO DA APLICACAO (_APP) - a API roda sem ser dona de nada
 -- #########################################################
--- NOVO: o banco de dados de negocio da Kawashi vai ter TABELAS PADRAO
--- compartilhadas entre servicos (ex: CLIENTE - dados cadastrais basicos que
--- qualquer servico usa; o conjunto completo, com ENDERECO, EMPRESA, FILIAL,
--- CONTATO, SOCIO etc., vive no repositorio de tabelas, nao aqui) e TABELAS
--- ESPECIFICAS de cada servico fiscal (ex: SEFAZ, SIMPLES_NACIONAL), que
--- referenciam as tabelas padrao via FK mas nao devem ser visiveis a quem nao
--- tem liberacao para aquele servico especifico. As REGRAS dessa segmentacao
--- (schemas, grants, proxy) sao deste repositorio; as tabelas em si, nao.
+-- Quem entra por proxy num schema de ambiente age como o DONO dele, e o dono de uma tabela
+-- sempre pode apaga-la (DROP nao exige privilegio nenhum sobre objeto proprio). Enquanto a API
+-- atendia os pedidos por esse caminho, quem a invadisse podia destruir as tabelas.
 --
--- "Padrao" NAO ganha schema novo - continua sendo o proprio schema de
--- ambiente (KAWASHI_ENV_DEV, etc.) que ja existe, decisao deliberada pra nao
--- migrar nada que ja funciona. Isso tambem significa que a visibilidade do
--- padrao nao precisa de GRANT novo nenhum: quem ja tem CONNECT THROUGH no
--- ambiente ja ve as tabelas padrao dele, exatamente como ja funciona hoje.
+-- Agora sao duas contas de API por ambiente (ver infra/scripts/create-api-account.ps1 -Papel):
+--   * MIGRACAO: proxy no schema do ambiente (KAWASHI_ENV_<AMBIENTE>). Cria e altera tabelas.
+--     So e usada na subida da aplicacao, pelo Flyway.
+--   * EXECUCAO: proxy no schema KAWASHI_ENV_<AMBIENTE>_APP, criado aqui. Esse schema nao tem
+--     tabela, nao tem quota e so tem CREATE SESSION: nao consegue criar nem apagar nada. Recebe
+--     apenas SELECT/INSERT/UPDATE/DELETE nas tabelas de cadastro (concedidos pela propria
+--     migracao, depois de cria-las) e INSERT/SELECT no schema de log (11_schema_log.sql).
 --
--- Cada SERVICO ganha um schema novo, por ambiente, no formato
--- KAWASHI_ENV_<AMBIENTE>_<SERVICO> - tambem NO AUTHENTICATION, tambem
--- acessado via proxy, mas com uma liberacao ADITIVA e INDEPENDENTE da
--- liberacao do ambiente em si (ver infra/scripts/create-team-member.ps1,
--- parametro -Servicos): ter CONNECT THROUGH no ambiente nao da,  sozinho,
--- nenhum acesso aos schemas de servico dele.
---
--- Esta rodada implementa o padrao com 2 servicos de EXEMPLO (SEFAZ e
--- SIMPLES_NACIONAL) - mecanicamente repetivel pra mais servicos depois (so
--- replicar o mesmo bloco CREATE USER + GRANT com o novo nome).
-CREATE USER KAWASHI_ENV_TESTE_DEV_SEFAZ             NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_TESTE_DEV   QUOTA UNLIMITED ON TS_KAWASHI_ENV_TESTE_DEV;
-CREATE USER KAWASHI_ENV_TESTE_DEV_SIMPLES_NACIONAL  NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_TESTE_DEV   QUOTA UNLIMITED ON TS_KAWASHI_ENV_TESTE_DEV;
-CREATE USER KAWASHI_ENV_TESTE_INFRA_SEFAZ           NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_TESTE_INFRA QUOTA UNLIMITED ON TS_KAWASHI_ENV_TESTE_INFRA;
-CREATE USER KAWASHI_ENV_TESTE_INFRA_SIMPLES_NACIONAL NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_TESTE_INFRA QUOTA UNLIMITED ON TS_KAWASHI_ENV_TESTE_INFRA;
-CREATE USER KAWASHI_ENV_DEV_SEFAZ                   NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_DEV         QUOTA UNLIMITED ON TS_KAWASHI_ENV_DEV;
-CREATE USER KAWASHI_ENV_DEV_SIMPLES_NACIONAL        NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_DEV         QUOTA UNLIMITED ON TS_KAWASHI_ENV_DEV;
-CREATE USER KAWASHI_ENV_INFRA_SEFAZ                 NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_INFRA       QUOTA UNLIMITED ON TS_KAWASHI_ENV_INFRA;
-CREATE USER KAWASHI_ENV_INFRA_SIMPLES_NACIONAL      NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_INFRA       QUOTA UNLIMITED ON TS_KAWASHI_ENV_INFRA;
-CREATE USER KAWASHI_ENV_HOMOLOG_SEFAZ               NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_HOMOLOG     QUOTA UNLIMITED ON TS_KAWASHI_ENV_HOMOLOG;
-CREATE USER KAWASHI_ENV_HOMOLOG_SIMPLES_NACIONAL    NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_HOMOLOG     QUOTA UNLIMITED ON TS_KAWASHI_ENV_HOMOLOG;
-CREATE USER KAWASHI_ENV_PROD_SEFAZ                  NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_PROD        QUOTA UNLIMITED ON TS_KAWASHI_ENV_PROD;
-CREATE USER KAWASHI_ENV_PROD_SIMPLES_NACIONAL       NO AUTHENTICATION DEFAULT TABLESPACE TS_KAWASHI_ENV_PROD        QUOTA UNLIMITED ON TS_KAWASHI_ENV_PROD;
+-- Idempotente: pode ser rodado de novo num banco que ja tem os schemas.
+DECLARE
+    v_total NUMBER;
+BEGIN
+    FOR a IN (SELECT column_value AS nome
+                FROM TABLE(sys.odcivarchar2list('TESTE_DEV', 'TESTE_INFRA', 'DEV', 'INFRA', 'HOMOLOG', 'PROD'))) LOOP
+        SELECT COUNT(*) INTO v_total FROM dba_users WHERE username = 'KAWASHI_ENV_' || a.nome || '_APP';
+        IF v_total = 0 THEN
+            EXECUTE IMMEDIATE 'CREATE USER KAWASHI_ENV_' || a.nome || '_APP NO AUTHENTICATION';
+            EXECUTE IMMEDIATE 'GRANT CREATE SESSION TO KAWASHI_ENV_' || a.nome || '_APP';
+        END IF;
+    END LOOP;
+END;
+/
 
-GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE TRIGGER TO
-    KAWASHI_ENV_TESTE_DEV_SEFAZ, KAWASHI_ENV_TESTE_DEV_SIMPLES_NACIONAL,
-    KAWASHI_ENV_TESTE_INFRA_SEFAZ, KAWASHI_ENV_TESTE_INFRA_SIMPLES_NACIONAL,
-    KAWASHI_ENV_DEV_SEFAZ, KAWASHI_ENV_DEV_SIMPLES_NACIONAL,
-    KAWASHI_ENV_INFRA_SEFAZ, KAWASHI_ENV_INFRA_SIMPLES_NACIONAL,
-    KAWASHI_ENV_HOMOLOG_SEFAZ, KAWASHI_ENV_HOMOLOG_SIMPLES_NACIONAL,
-    KAWASHI_ENV_PROD_SEFAZ, KAWASHI_ENV_PROD_SIMPLES_NACIONAL;
-
--- NOTA: o GRANT REFERENCES (necessario pra uma tabela de servico ter FK pra
--- uma tabela padrao do mesmo ambiente) nao entra aqui - so pode ser concedido
--- depois que a tabela padrao referenciada EXISTIR. Ver
--- infra/oracle-init/11_fixture_contrato_segmentacao.sql, que cria a fixture
--- minima (CLIENTE + SEFAZ.CONFIGURACAO_FISCAL) e os GRANTs de REFERENCES juntos.
+-- Alem dos schemas de ambiente, cada ambiente tem um schema de LOG proprio
+-- (KAWASHI_ENV_<AMBIENTE>_LOG), criado em 11_schema_log.sql: guarda os logs da
+-- aplicacao e a conta de execucao da API so consegue INSERIR e LER nele.
 
 -- #########################################################
 -- 3. QUEM PODE ENTRAR EM CADA AMBIENTE (PROXY AUTHENTICATION)
@@ -172,20 +150,6 @@ GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDU
 -- unica conta capaz de escrever la e o ENGINEER_USER (grant DBA, ver
 -- 08_engineer_account.sql), que nao precisa de proxy porque DBA ja pode
 -- operar como qualquer schema.
---
--- ACESSO A SERVICO (-Servicos): e ADITIVO e INDEPENDENTE do -Profile - para
--- cada servico pedido (ex: SEFAZ), create-team-member.ps1 concede CONNECT
--- THROUGH no(s) schema(s) KAWASHI_ENV_<AMBIENTE>_<SERVICO> de TODO ambiente
--- que o -Profile escolhido ja alcanca. Ex: um Desenvolvedor com -Servicos
--- SEFAZ ganha proxy em KAWASHI_ENV_DEV_SEFAZ E KAWASHI_ENV_HOMOLOG_SEFAZ, mas
--- continua sem nenhum acesso a KAWASHI_ENV_DEV_SIMPLES_NACIONAL. Nao ter
--- nenhum -Servicos continua sendo uma opcao valida (acesso so as tabelas
--- padrao do ambiente, sem nenhum servico especifico).
---
--- FORA DE ESCOPO POR ENQUANTO (decisao explicita): o perfil HomologViewer
--- (QA) nao tem, ainda, uma versao "por servico" - ele continua enxergando
--- (so leitura) tudo que a secao 5 ja cobre em KAWASHI_ENV_HOMOLOG, sem
--- segmentacao por SEFAZ/SIMPLES_NACIONAL dentro de Homologacao.
 
 -- #########################################################
 -- 4. PERFIL "QA / HOMOLOG VIEWER" - so leitura, so em Homologacao
@@ -222,10 +186,6 @@ GRANT CREATE SESSION TO ROLE_KAWASHI_HOMOLOG_VIEWER;
 -- KAWASHI_ENV_HOMOLOG tambem precisa do privilegio CREATE JOB (ver GRANT
 -- logo abaixo), que nao fazia parte do conjunto de GRANTs da secao 2.
 --
--- NOTA: este trigger cobre so o schema PADRAO de Homologacao
--- (KAWASHI_ENV_HOMOLOG) - os schemas de servico de Homologacao
--- (KAWASHI_ENV_HOMOLOG_SEFAZ, etc.) nao tem trigger equivalente ainda (ver
--- decisao "fora de escopo" na secao 3 acima).
 GRANT CREATE JOB TO KAWASHI_ENV_HOMOLOG;
 
 CREATE OR REPLACE TRIGGER KAWASHI_ENV_HOMOLOG.KAWASHI_HOMOLOG_AUTOGRANT_TRG

@@ -1,3 +1,8 @@
+# Nome do projeto no Docker: e o grupo sob o qual o Docker Desktop mostra os containers
+# e o prefixo da rede ("regras-banco-usp_kawashi-net"). Sem esta linha o Compose usaria o
+# nome da pasta deste arquivo ("infra"), que nao diz de qual repositorio os containers sao.
+name: regras-banco-usp
+
 services:
   # ---------------------------------------------------------
   # O Banco de Dados da Kawashi (Oracle Free Edition)
@@ -6,8 +11,11 @@ services:
   oracle:
     image: gvenzl/oracle-free:latest # Imagem oficial e leve do Oracle para desenvolvimento.
     container_name: kawashi-oracle   # Nome fixo para facilitar a referência por outros serviços.
+    # So na interface local (127.0.0.1): sem o IP na frente, o Docker publica a porta em TODAS as
+    # interfaces da maquina, e qualquer um na mesma rede (o Wi-Fi do escritorio, da faculdade)
+    # alcanca o banco. Quem precisa acessar de outra maquina deve vir por VPN/tunel, nao pela rede.
     ports:
-      - "1521:1521"                  # Porta padrão do Oracle (Local:Container).
+      - "127.0.0.1:1521:1521"                 # Porta padrão do Oracle (Local:Container).
     environment:
       - ORACLE_PASSWORD=${ORACLE_PASSWORD}       # Senha do usuário SYS/SYSTEM (Admin Root do banco).
       # A imagem gvenzl/oracle-free exige que estas duas variaveis se chamem exatamente
@@ -37,19 +45,15 @@ services:
     networks:
       - kawashi-net # Conecta o banco à rede privada interna.
     # #########################################################################
-    # 🔒 TODO SEGURANÇA PENDENTE - HARDENING DE REDE (nao ativo ainda)
+    # CRIPTOGRAFIA DA CONEXAO + TRAVA DO LISTENER (aplicada por script)
     # #########################################################################
-    # Criptografia em transito (SQLNET.ENCRYPTION) + bloqueio de reconfiguracao
-    # remota do listener (ADMIN_RESTRICTIONS_LISTENER) ja estao PRONTOS pra
-    # aplicar, mas de proposito NAO estao automatizados aqui - sao mudancas em
-    # arquivo de rede do Oracle (sqlnet.ora/listener.ora), nao em SQL, e um erro
-    # ali derruba o listener inteiro (pior que um bug de trigger).
-    #
-    # Conteudo pronto:  infra/oracle-network-config/*.append
-    # Passo a passo:    infra/docs/hardening-rede.md
-    #
-    # Aplicar manualmente, e SO depois do ambiente ja ter subido limpo pelo
-    # menos uma vez (verify-environment.ps1 sem erro). Nao esquecer.
+    # Os arquivos de rede do Oracle (sqlnet.ora/listener.ora) NAO sao montados
+    # aqui de proposito: um bind-mount sobrescreveria as linhas que a propria
+    # imagem coloca neles. Quem aplica e infra/scripts/apply-network-hardening.ps1,
+    # que acrescenta so o bloco do Kawashi, confere numa conexao de verdade e
+    # desfaz sozinho se algo falhar. Ver infra/docs/hardening-rede.md.
+    # ATENCAO: estes arquivos moram dentro do container (sem volume). Se o
+    # container for recriado, rode o script de novo.
     # #########################################################################
 
   # ---------------------------------------------------------
@@ -63,8 +67,11 @@ services:
     # Atualizar somente após confirmação de compatibilidade com o ambiente local.
     image: hashicorp/vault:1.15.6
     container_name: kawashi-vault
+    # So na interface local, pelo mesmo motivo do Oracle, e com mais razao: em modo -dev o Vault
+    # responde em HTTP puro e aceita o token root. O "0.0.0.0" do command abaixo e DENTRO do
+    # container (necessario para o Docker encaminhar a porta), nao na maquina.
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
     environment:
       - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_ROOT_TOKEN_ID}
       # CORRIGIDO (achado testando ao vivo): o modo -dev sobe em HTTP puro, sem
