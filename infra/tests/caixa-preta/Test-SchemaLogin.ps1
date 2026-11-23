@@ -65,12 +65,15 @@ try {
 
     # --- permissoes exatas (o sqlplus quebra a linha longa: a comparacao ignora espacos e quebras) ---
     $privs = Invoke-Sys "SELECT 'P=' || LISTAGG(REPLACE(owner, '${amb}_', '') || '.' || table_name || ':' || privilege, ',') WITHIN GROUP (ORDER BY owner, table_name, privilege) FROM dba_tab_privs WHERE grantee = '${amb}_APP' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
-    $esperado = 'P=LOGIN.CODIGO_RECUPERACAO:INSERT,LOGIN.CODIGO_RECUPERACAO:SELECT,LOGIN.CODIGO_RECUPERACAO:UPDATE,' +
+    # Inclui as tabelas da autorizacao (14_autorizacao.sql), que tambem ficam no _LOGIN.
+    $esperado = 'P=LOGIN.ADMIN_PLATAFORMA:SELECT,LOGIN.CODIGO_RECUPERACAO:INSERT,LOGIN.CODIGO_RECUPERACAO:SELECT,LOGIN.CODIGO_RECUPERACAO:UPDATE,' +
         'LOGIN.CONVITE:INSERT,LOGIN.CONVITE:SELECT,LOGIN.CONVITE:UPDATE,LOGIN.PARAMETRO_SEGURANCA:SELECT,' +
-        'LOGIN.PASSKEY:INSERT,LOGIN.PASSKEY:SELECT,LOGIN.PASSKEY:UPDATE,LOGIN.USUARIO:INSERT,LOGIN.USUARIO:SELECT,LOGIN.USUARIO:UPDATE,' +
+        'LOGIN.PASSKEY:INSERT,LOGIN.PASSKEY:SELECT,LOGIN.PASSKEY:UPDATE,LOGIN.PERFIL:INSERT,LOGIN.PERFIL:SELECT,LOGIN.PERFIL:UPDATE,' +
+        'LOGIN.PERFIL_PERMISSAO:INSERT,LOGIN.PERFIL_PERMISSAO:SELECT,LOGIN.PERFIL_PERMISSAO:UPDATE,LOGIN.PERMISSAO:SELECT,' +
+        'LOGIN.USUARIO:INSERT,LOGIN.USUARIO:SELECT,LOGIN.USUARIO:UPDATE,LOGIN.USUARIO_EMPRESA:INSERT,LOGIN.USUARIO_EMPRESA:SELECT,LOGIN.USUARIO_EMPRESA:UPDATE,' +
         'SESSAO.BLOQUEIO_IP:INSERT,SESSAO.BLOQUEIO_IP:SELECT,SESSAO.BLOQUEIO_IP:UPDATE,SESSAO.DESAFIO:INSERT,SESSAO.DESAFIO:SELECT,' +
         'SESSAO.DESAFIO:UPDATE,SESSAO.TOKEN:INSERT,SESSAO.TOKEN:SELECT,SESSAO.TOKEN:UPDATE'
-    $results += New-TestResult -Name "A conta de execucao da API tem EXATAMENTE: usuario, passkey, convite, codigo de recuperacao, token, desafio e bloqueio de IP (ler, criar, alterar) e parametros (so ler). Nenhum DELETE" -Passed (($privs -replace '\s', '') -eq $esperado) -Details "obtido:  $($privs -replace '\s', '')`nesperado: $esperado"
+    $results += New-TestResult -Name "A conta de execucao da API tem EXATAMENTE: usuario, passkey, convite, codigo de recuperacao, perfil, permissao de perfil, vinculo com empresa, token, desafio e bloqueio de IP (ler, criar, alterar); parametros, lista de permissoes e administradores da plataforma (so ler). Nenhum DELETE" -Passed (($privs -replace '\s', '') -eq $esperado) -Details "obtido:  $($privs -replace '\s', '')`nesperado: $esperado"
 
     $migPriv = Invoke-Sys "SELECT 'M=' || COUNT(*) FROM dba_tab_privs WHERE grantee = '$amb' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
     $migLe = Invoke-Como $connMig "SELECT COUNT(*) FROM ${amb}_LOGIN.USUARIO;"

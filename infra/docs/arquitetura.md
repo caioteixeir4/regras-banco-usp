@@ -378,6 +378,44 @@ flowchart LR
 `SYS_EXTRACT_UTC(SYSTIMESTAMP)`. Comparar com `SYSTIMESTAMP` faz o Oracle ler a coluna no fuso da
 sessão de quem consulta; com a API em −05:00, um token vencido valia mais 5 horas (achado 31).
 
+## 2.6 Autorização multiempresa: perfis, vínculos e o log das trocas de cargo
+
+`14_autorizacao.sql` acrescenta ao `_LOGIN` de cada ambiente o que diz o que cada usuário pode fazer
+e em quais empresas, e o `LOG_PERMISSAO` ao schema de log. A API recebe:
+
+| Tabela | A API pode |
+|---|---|
+| `PERFIL`, `PERFIL_PERMISSAO`, `USUARIO_EMPRESA` | ler, criar, alterar (**sem `DELETE`**: tirar permissão ou acesso é desativar) |
+| `PERMISSAO`, `ADMIN_PLATAFORMA` | **só ler**: ninguém cria permissão nem se promove a administrador da plataforma pela API |
+| `LOG_PERMISSAO` | **só ler**: quem grava são os gatilhos do `_LOGIN` |
+
+As regras de cargo ficam no **banco**, para valerem mesmo para quem contorna a API:
+
+```mermaid
+flowchart TB
+    API["API (schema _APP)<br/>ATUALIZADO_POR = USUARIO:id"] -- "INSERT / UPDATE" --> UE[(USUARIO_EMPRESA)]
+    DBA["DBA, direto no banco"] -- "UPDATE" --> UE
+    UE --> T1{"gatilho por linha<br/>autor informado? perfil ativo?<br/>vínculo não muda de usuário nem de empresa?"}
+    T1 -- não --> X1["ORA-20104 / 20109 / 20110"]
+    T1 -- sim --> LOG[(LOG_PERMISSAO<br/>de/para, quem, quando<br/>encadeado por hash)]
+    UE --> T2{"gatilho no fim do comando<br/>trava o ADMINISTRADOR da empresa<br/>sobrou algum administrador ativo?"}
+    T2 -- não --> X2["ORA-20103: desfaz tudo"]
+    PP[(PERFIL_PERMISSAO)] --> T3{"permissão exclusiva<br/>em outro perfil? perfil fixo?"}
+    T3 -- sim --> X3["ORA-20108 / 20107"]
+    T3 -- não --> LOG
+```
+
+Quem fez cada mudança: pela API, ela é obrigada a informar `USUARIO:<id>` (ou `SCRIPT:<nome>` nos
+scripts), senão a gravação é recusada; direto no banco, o gatilho grava a conta de quem está
+conectado (a pessoa, quando entra por proxy), e o que veio escrito é ignorado. O perfil do vínculo é
+da mesma empresa por chave estrangeira composta. As chaves para `EMPRESA` (que é criada pelo Flyway
+da API) e o painel `V_USUARIO_ACESSOS` são feitos pela procedure `SYS.KAWASHI_LIGAR_AUTORIZACAO`,
+chamada pelo `afterMigrate.sql` da API, como a do login.
+
+O **administrador da plataforma** (`ADMIN_PLATAFORMA`) cria empresas novas pela API, mas não
+enxerga os dados delas. O papel só se concede com `infra/scripts/conceder-admin-plataforma.ps1`,
+pela conta do engenheiro: o gatilho grava quem concedeu e manda a concessão (e a revogação) para o
+`LOG_SEGURANCA`.
 ## 3. Como uma pessoa nova recebe acesso (onboarding via Vault)
 
 Nenhuma senha passa por chat, e-mail ou arquivo de texto em nenhum momento deste fluxo:

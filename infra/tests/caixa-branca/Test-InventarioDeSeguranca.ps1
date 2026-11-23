@@ -111,7 +111,7 @@ EXIT;
 '@
 $procsReais = Get-ConjuntoViaSql -Sql $sqlProcs
 # KAWASHI_REGISTRAR_CONTA, KAWASHI_SITUACAO_DA_SENHA e KAWASHI_DESLIGAR_CONTA: cadastro de contas (12_cadastro_de_contas.sql).
-$procsEsperados = @('KAWASHI_PASSWORD_VERIFY', 'KAWASHI_WRITE_SECURITY_LOG', 'KAWASHI_REGISTRAR_CONTA', 'KAWASHI_SITUACAO_DA_SENHA', 'KAWASHI_DESLIGAR_CONTA', 'KAWASHI_LIGAR_LOGIN_PESSOA')
+$procsEsperados = @('KAWASHI_PASSWORD_VERIFY', 'KAWASHI_WRITE_SECURITY_LOG', 'KAWASHI_REGISTRAR_CONTA', 'KAWASHI_SITUACAO_DA_SENHA', 'KAWASHI_DESLIGAR_CONTA', 'KAWASHI_LIGAR_LOGIN_PESSOA', 'KAWASHI_LIGAR_AUTORIZACAO')
 $results += Compare-Inventario -Nome 'procedures/functions' -Esperado $procsEsperados -Real $procsReais
 
 # --- Jobs agendados -----------------------------------------------------------

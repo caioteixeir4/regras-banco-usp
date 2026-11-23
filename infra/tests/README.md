@@ -47,7 +47,7 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (43 arquivos, 375 casos na última execução completa, 20/11/2026). O
+Arquivos de teste atuais, por categoria (44 arquivos, 386 casos na última execução completa, 23/11/2026). O
 histórico da contagem está nas rodadas abaixo: a remoção dos schemas de serviço tirou 3 arquivos, e
 o schema de log trouxe 1 arquivo com 16 casos.
 
@@ -318,7 +318,28 @@ Itens 31 (complemento), 32 e 33 de `bugs-primeiro-teste.md`.
 - `Run-AllTests.ps1` e oito scripts de `infra/scripts` passaram a funcionar com `powershell -File`
   (item 32).
 - Total da suíte: **375** casos em **43** arquivos, todos passando (445 s).
-### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
+
+### Rodada "autorização multiempresa" (23/11/2026)
+
+- `Test-Autorizacao.ps1` (novo, caixa-preta, 11 casos): entra com a conta de execução da API e com a
+  do DBA e tenta furar cada trava de `14_autorizacao.sql`:
+  - a API não apaga nada, não se promove a administrador da plataforma e não grava no `LOG_PERMISSAO`;
+  - a API tem de dizer quem fez cada mudança;
+  - permissão exclusiva não vai para outro perfil, e o ADMINISTRADOR não se edita;
+  - o perfil do vínculo é da mesma empresa;
+  - a empresa nunca fica sem administrador;
+  - cada troca de cargo vai para o log, com de/para e quem, inclusive a feita pelo DBA;
+  - o log é encadeado;
+  - conceder administrador da plataforma grava quem concedeu e vai para o `LOG_SEGURANCA`.
+
+  Conferido quebrando de propósito: com três gatilhos desligados no `TESTE_INFRA` (o da trava do
+  administrador, o das permissões e o do log), os seis casos ligados a eles falharam; religados em
+  seguida.
+- `Test-SchemaLogin.ps1`: as permissões exatas da API no `_LOGIN` passaram a incluir as tabelas da
+  autorização.
+- `Test-InventarioDeSeguranca.ps1`: passou a esperar `KAWASHI_LIGAR_AUTORIZACAO`. Ele falhou primeiro,
+  como deve: procedure nova em `SYS` sem estar declarada é exatamente o que ele vigia.
+- Total da suíte: **386** casos em **44** arquivos, todos passando.### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 
 - `Test-TrilhaSegurancaFailover.ps1`: força `KAWASHI_WRITE_SECURITY_LOG` a falhar de verdade na
   gravação principal (um `DETAILS` maior que a coluna aguenta) e confirma que o fallback

@@ -153,7 +153,15 @@ arquivo explicam o "porquê" de cada peça, não só o "o quê"):
   migração não enxerga nada; mudar um parâmetro gera registro sozinho; um job do banco apaga tokens e
   desafios vencidos. Tudo em UTC. Testado em
   [`Test-SchemaLogin.ps1`](infra/tests/caixa-preta/Test-SchemaLogin.ps1).
-
+- **Autorização multiempresa** por ambiente, no mesmo `_LOGIN` — `14`: perfis por empresa, permissões,
+  o vínculo do usuário com cada empresa, o administrador da plataforma e o `LOG_PERMISSAO` (encadeado)
+  no schema de log. O **banco** garante as regras, mesmo para quem contorna a API: toda empresa com
+  pelo menos um administrador ativo, perfil do vínculo da mesma empresa, permissões exclusivas só no
+  administrador, o administrador não se edita, quem fez cada mudança fica registrado, e cada troca de
+  cargo vai sozinha para o log (a API nem tem `INSERT` nele, e não tem `DELETE` em nada). O papel de
+  administrador da plataforma só se concede por
+  [`infra/scripts/conceder-admin-plataforma.ps1`](infra/scripts/conceder-admin-plataforma.ps1).
+  Testado em [`Test-Autorizacao.ps1`](infra/tests/caixa-preta/Test-Autorizacao.ps1).
 ### RBAC — perfis de acesso do time
 Perfis prontos que já definem automaticamente em qual ambiente cada pessoa pode
 ler/escrever, sem grant manual por tabela:
@@ -302,6 +310,7 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - [~] Âncora do log no Vault: script e conferência prontos; falta agendar a execução e, em produção,
       usar uma credencial que o DBA não tenha.
 - [x] Schemas `LOGIN` e `SESSAO` para o login da API, só por passkey (o desenho está em `tabelas-api-banco-usp/docs/modelo-de-dados.md`).
+- [x] Autorização multiempresa com as regras de cargo garantidas pelo banco (`14_autorizacao.sql`).
 - [ ] Acesso restrito e temporário a Homologação e Produção.
       (A segmentação por serviço com os schemas de exemplo SEFAZ/SIMPLES_NACIONAL foi removida:
       era só material de teste. Ver item 22 de `infra/docs/bugs-primeiro-teste.md`.)
