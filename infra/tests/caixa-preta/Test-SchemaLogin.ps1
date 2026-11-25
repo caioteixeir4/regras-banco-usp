@@ -65,15 +65,17 @@ try {
 
     # --- permissoes exatas (o sqlplus quebra a linha longa: a comparacao ignora espacos e quebras) ---
     $privs = Invoke-Sys "SELECT 'P=' || LISTAGG(REPLACE(owner, '${amb}_', '') || '.' || table_name || ':' || privilege, ',') WITHIN GROUP (ORDER BY owner, table_name, privilege) FROM dba_tab_privs WHERE grantee = '${amb}_APP' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
-    # Inclui as tabelas da autorizacao (14_autorizacao.sql), que tambem ficam no _LOGIN.
-    $esperado = 'P=LOGIN.ADMIN_PLATAFORMA:SELECT,LOGIN.CODIGO_RECUPERACAO:INSERT,LOGIN.CODIGO_RECUPERACAO:SELECT,LOGIN.CODIGO_RECUPERACAO:UPDATE,' +
+    # Inclui as tabelas da autorizacao (14), dos termos (15) e o endurecimento (16), todas no _LOGIN.
+    $esperado = 'P=LOGIN.ACEITE_TERMO:INSERT,LOGIN.ACEITE_TERMO:SELECT,LOGIN.ADMIN_PLATAFORMA:SELECT,LOGIN.CODIGO_RECUPERACAO:INSERT,LOGIN.CODIGO_RECUPERACAO:SELECT,LOGIN.CODIGO_RECUPERACAO:UPDATE,' +
         'LOGIN.CONVITE:INSERT,LOGIN.CONVITE:SELECT,LOGIN.CONVITE:UPDATE,LOGIN.PARAMETRO_SEGURANCA:SELECT,' +
-        'LOGIN.PASSKEY:INSERT,LOGIN.PASSKEY:SELECT,LOGIN.PASSKEY:UPDATE,LOGIN.PERFIL:INSERT,LOGIN.PERFIL:SELECT,LOGIN.PERFIL:UPDATE,' +
-        'LOGIN.PERFIL_PERMISSAO:INSERT,LOGIN.PERFIL_PERMISSAO:SELECT,LOGIN.PERFIL_PERMISSAO:UPDATE,LOGIN.PERMISSAO:SELECT,' +
-        'LOGIN.USUARIO:INSERT,LOGIN.USUARIO:SELECT,LOGIN.USUARIO:UPDATE,LOGIN.USUARIO_EMPRESA:INSERT,LOGIN.USUARIO_EMPRESA:SELECT,LOGIN.USUARIO_EMPRESA:UPDATE,' +
+        'LOGIN.PASSKEY:INSERT,LOGIN.PASSKEY:SELECT,LOGIN.PASSKEY:UPDATE,LOGIN.PERFIL:INSERT,LOGIN.PERFIL:SELECT,' +
+        'LOGIN.PERFIL_PERMISSAO:INSERT,LOGIN.PERFIL_PERMISSAO:SELECT,LOGIN.PERFIL_PERMISSAO:UPDATE,LOGIN.PERMISSAO:SELECT,LOGIN.TERMO:SELECT,' +
+        'LOGIN.USUARIO:INSERT,LOGIN.USUARIO:SELECT,LOGIN.USUARIO_EMPRESA:INSERT,LOGIN.USUARIO_EMPRESA:SELECT,LOGIN.USUARIO_EMPRESA:UPDATE,' +
         'SESSAO.BLOQUEIO_IP:INSERT,SESSAO.BLOQUEIO_IP:SELECT,SESSAO.BLOQUEIO_IP:UPDATE,SESSAO.DESAFIO:INSERT,SESSAO.DESAFIO:SELECT,' +
         'SESSAO.DESAFIO:UPDATE,SESSAO.TOKEN:INSERT,SESSAO.TOKEN:SELECT,SESSAO.TOKEN:UPDATE'
-    $results += New-TestResult -Name "A conta de execucao da API tem EXATAMENTE: usuario, passkey, convite, codigo de recuperacao, perfil, permissao de perfil, vinculo com empresa, token, desafio e bloqueio de IP (ler, criar, alterar); parametros, lista de permissoes e administradores da plataforma (so ler). Nenhum DELETE" -Passed (($privs -replace '\s', '') -eq $esperado) -Details "obtido:  $($privs -replace '\s', '')`nesperado: $esperado"
+    # Permissao por coluna: do USUARIO, a API so liga e desliga (ATIVO).
+    $colunas = Invoke-Sys "SELECT 'C=' || LISTAGG(table_name || '.' || column_name || ':' || privilege, ',') WITHIN GROUP (ORDER BY table_name, column_name) FROM dba_col_privs WHERE grantee = '${amb}_APP' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
+    $results += New-TestResult -Name "A conta de execucao da API tem EXATAMENTE: passkey, convite, codigo de recuperacao, permissao de perfil, vinculo com empresa, token, desafio e bloqueio de IP (ler, criar, alterar); usuario e perfil (ler e criar; do usuario, UPDATE so na coluna ATIVO); aceite de termos (ler e criar); parametros, termos, lista de permissoes e administradores da plataforma (so ler). Nenhum DELETE" -Passed ((($privs -replace '\s', '') -eq $esperado) -and (($colunas -replace '\s', '') -eq 'C=USUARIO.ATIVO:UPDATE')) -Details "obtido:  $($privs -replace '\s', '') $colunas`nesperado: $esperado C=USUARIO.ATIVO:UPDATE"
 
     $migPriv = Invoke-Sys "SELECT 'M=' || COUNT(*) FROM dba_tab_privs WHERE grantee = '$amb' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
     $migLe = Invoke-Como $connMig "SELECT COUNT(*) FROM ${amb}_LOGIN.USUARIO;"
@@ -83,7 +85,7 @@ try {
     $mudaParam = Invoke-Como $connExec "UPDATE ${amb}_LOGIN.PARAMETRO_SEGURANCA SET VALOR = 999 WHERE CHAVE = 'TOKEN_MINUTOS';"
     $apagaToken = Invoke-Como $connExec "DELETE FROM ${amb}_SESSAO.TOKEN;"
     $apagaLog = Invoke-Como $connExec "DELETE FROM ${amb}_LOG.LOG_SEGURANCA;"
-    $results += New-TestResult -Name "A API le os 10 parametros mas NAO os altera, nao apaga token e nao apaga log de seguranca (ORA-01031/41900)" -Passed (($leParam -match 'N=10') -and ($mudaParam -match 'ORA-(01031|41900)') -and ($apagaToken -match 'ORA-(01031|41900)') -and ($apagaLog -match 'ORA-(01031|41900)')) -Details "$leParam`n$mudaParam`n$apagaToken`n$apagaLog"
+    $results += New-TestResult -Name "A API le os 11 parametros (o 11o, CONFIRMACAO_MINUTOS, veio no passo 17) mas NAO os altera, nao apaga token e nao apaga log de seguranca (ORA-01031/41900)" -Passed (($leParam -match 'N=11') -and ($mudaParam -match 'ORA-(01031|41900)') -and ($apagaToken -match 'ORA-(01031|41900)') -and ($apagaLog -match 'ORA-(01031|41900)')) -Details "$leParam`n$mudaParam`n$apagaToken`n$apagaLog"
 
     # --- parametro alterado vai para o log sozinho ----------------------------------------
     $antes = Invoke-Sys "SELECT 'V=' || VALOR FROM ${amb}_LOGIN.PARAMETRO_SEGURANCA WHERE CHAVE = 'IP_MAX_FALHAS';"

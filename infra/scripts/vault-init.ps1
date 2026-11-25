@@ -180,6 +180,20 @@ if ($authJaExiste) {
 }
 
 # ---------------------------------------------------------------------------
+# 2b. Auth method "approle"
+#     E o login das APLICACOES (API e BFF): cada uma recebe um papel com leitura so dos proprios
+#     segredos (infra/scripts/criar-approle.ps1), em vez de copiar senha e chave para o .env.
+# ---------------------------------------------------------------------------
+Write-Host "-> Verificando auth method 'approle'..."
+if ($authList -and ($authList.PSObject.Properties.Name -contains 'approle/')) {
+    Write-Host "   Ja existe - nada a fazer." -ForegroundColor DarkGray
+} else {
+    Write-Host "   Nao existe ainda - habilitando..."
+    Invoke-VaultCommand auth enable approle | Out-Null
+    Write-Host "   Habilitado. Crie o papel de cada aplicacao com criar-approle.ps1." -ForegroundColor Green
+}
+
+# ---------------------------------------------------------------------------
 # 3. Copia da senha do keystore do TDE (criptografia em disco)
 #    O enable-tde.ps1 guarda a senha no .env e no Vault. Como o Vault de
 #    desenvolvimento perde tudo a cada restart, a copia e reposta aqui a partir

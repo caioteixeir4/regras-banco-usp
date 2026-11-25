@@ -87,6 +87,23 @@ services:
     networks:
       - kawashi-net
 
+  # ---------------------------------------------------------
+  # Correio de TESTE (Mailpit) - so desenvolvimento
+  # A API manda os convites e os avisos de seguranca por SMTP. Aqui, um servidor que so RECEBE e
+  # mostra as mensagens numa pagina local (http://localhost:8025): nada sai para a internet. Em
+  # producao, a API aponta MAIL_HOST/MAIL_PORT para o servidor de e-mail de verdade (com TLS).
+  # Subir so ele, sem mexer no banco e no Vault:  docker compose up -d --no-deps mailpit
+  # ---------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    container_name: kawashi-mailpit
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP (a API manda aqui)
+      - "127.0.0.1:8025:8025"   # pagina com as mensagens recebidas
+    restart: unless-stopped
+    networks:
+      - kawashi-net
+
 # ---------------------------------------------------------
 # Rede Privada (Bridge)
 # Garante que os serviços se enxerguem pelo nome do container (DNS interno).

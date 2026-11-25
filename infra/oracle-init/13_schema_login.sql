@@ -385,7 +385,8 @@ DECLARE
         -- ======================= PERMISSOES =======================
         -- So o schema de EXECUCAO da API (_APP), e nenhum DELETE. O schema do ambiente (conta de
         -- migracao e pessoas) nao recebe nada.
-        executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.USUARIO TO ' || v_app);
+        -- Da conta, a API so liga e desliga (ATIVO): HANDLE e e-mail nao mudam por ela.
+        executar('GRANT SELECT, INSERT, UPDATE (ATIVO) ON ' || v_login || '.USUARIO TO ' || v_app);
         executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.PASSKEY TO ' || v_app);
         executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.CONVITE TO ' || v_app);
         executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.CODIGO_RECUPERACAO TO ' || v_app);

@@ -241,9 +241,10 @@ DECLARE
             executar('CREATE INDEX ' || v_sessao || '.IX_TOKEN_EMPRESA ON ' || v_sessao || '.TOKEN (USUARIO_ID, EMPRESA_ID)');
         END IF;
         trocar_check(v_sessao, 'TOKEN', 'CK_TOKEN_REVOGACAO',
-            q'[(REVOGADO_EM IS NULL AND MOTIVO_REVOGACAO IS NULL) OR (REVOGADO_EM IS NOT NULL AND MOTIVO_REVOGACAO IN ('LOGOUT', 'SAIR_DE_TODOS', 'PASSKEY_REMOVIDA', 'LIMITE_SESSOES', 'USUARIO_DESLIGADO', 'RECUPERACAO', 'SUSPEITA', 'TROCA_EMPRESA', 'VINCULO_DESATIVADO'))]');
+            q'[(REVOGADO_EM IS NULL AND MOTIVO_REVOGACAO IS NULL) OR (REVOGADO_EM IS NOT NULL AND MOTIVO_REVOGACAO IN ('LOGOUT', 'SAIR_DE_TODOS', 'PASSKEY_REMOVIDA', 'LIMITE_SESSOES', 'USUARIO_DESLIGADO', 'RECUPERACAO', 'SUSPEITA', 'TROCA_EMPRESA', 'VINCULO_DESATIVADO', 'EMPRESA_INATIVADA'))]');
         trocar_check(v_log, 'LOG_SEGURANCA', 'CK_LOG_SEGURANCA_EVENTO',
-            q'[EVENTO IN ('LOGIN', 'LOGOUT', 'SAIR_DE_TODOS', 'PASSKEY_CADASTRADA', 'PASSKEY_REMOVIDA', 'CODIGOS_GERADOS', 'CODIGO_USADO', 'CONVITE_CRIADO', 'CONVITE_USADO', 'IP_BLOQUEADO', 'SESSAO_ENCERRADA', 'USUARIO_CRIADO', 'PARAMETRO_ALTERADO', 'CONTADOR_SUSPEITO', 'EMPRESA_ESCOLHIDA', 'EMPRESA_CRIADA', 'ADMIN_PLATAFORMA_CONCEDIDO', 'ADMIN_PLATAFORMA_REVOGADO')]');
+            q'[EVENTO IN ('LOGIN', 'LOGOUT', 'SAIR_DE_TODOS', 'PASSKEY_CADASTRADA', 'PASSKEY_REMOVIDA', 'CODIGOS_GERADOS', 'CODIGO_USADO', 'CONVITE_CRIADO', 'CONVITE_USADO', 'IP_BLOQUEADO', 'SESSAO_ENCERRADA', 'USUARIO_CRIADO', 'PARAMETRO_ALTERADO', 'CONTADOR_SUSPEITO', 'EMPRESA_ESCOLHIDA', 'EMPRESA_CRIADA', 'ADMIN_PLATAFORMA_CONCEDIDO', 'ADMIN_PLATAFORMA_REVOGADO', 'TERMO_ACEITO', 'PASSKEY_CONFIRMADA', 'EMAIL_ENVIADO')]');
+        -- Lista UNICA dos eventos (inclusive os dos passos 15 e 17): os outros passos nao a reescrevem.
 
         -- ======================= LOG_PERMISSAO (encadeado) =======================
         IF NOT existe_tabela(v_log, 'LOG_PERMISSAO') THEN
@@ -447,7 +448,8 @@ DECLARE
                         END LOOP;
                         SELECT COUNT(*) INTO v_total
                           FROM ' || v_login || '.USUARIO_EMPRESA ue JOIN ' || v_login || '.PERFIL p ON p.ID = ue.PERFIL_ID
-                         WHERE ue.EMPRESA_ID = v_ids(i) AND ue.ATIVO AND p.FIXO;
+                          JOIN ' || v_login || '.USUARIO u ON u.ID = ue.USUARIO_ID
+                         WHERE ue.EMPRESA_ID = v_ids(i) AND ue.ATIVO AND u.ATIVO AND p.FIXO;  -- conta ligada E vinculo ativo
                         IF v_total = 0 THEN
                             RAISE_APPLICATION_ERROR(-20103, ''A empresa '' || v_ids(i) || '' ficaria sem nenhum administrador ativo.'');
                         END IF;
@@ -460,7 +462,7 @@ DECLARE
         -- ler. LOG_PERMISSAO: so ler (quem grava sao os gatilhos).
         executar('GRANT SELECT ON ' || v_login || '.ADMIN_PLATAFORMA TO ' || v_app);
         executar('GRANT SELECT ON ' || v_login || '.PERMISSAO TO ' || v_app);
-        executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.PERFIL TO ' || v_app);
+        executar('GRANT SELECT, INSERT ON ' || v_login || '.PERFIL TO ' || v_app);  -- perfil nao muda pela API
         executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.PERFIL_PERMISSAO TO ' || v_app);
         executar('GRANT SELECT, INSERT, UPDATE ON ' || v_login || '.USUARIO_EMPRESA TO ' || v_app);
         executar('GRANT SELECT ON ' || v_log || '.LOG_PERMISSAO TO ' || v_app);

@@ -86,9 +86,9 @@ diagramas carregam o Mermaid pela internet.
    `healthy` (`docker ps`), pode levar alguns minutos no primeiro boot.
 3. Rode `infra/scripts/verify-environment.ps1` — confere se sobrou algum objeto `KAWASHI_*`
    inválido (PL/SQL com erro de compilação) e se os jobs agendados estão ativos, depois do
-   bootstrap `01` a `11` (muito PL/SQL aqui nunca tinha rodado contra um Oracle de verdade).
+   bootstrap `01` a `17` (muito PL/SQL aqui nunca tinha rodado contra um Oracle de verdade).
 4. Rode `infra/scripts/vault-init.ps1` — o Vault sobe "vazio" toda vez (modo dev), esse
-   script configura o engine de segredos e o login por usuário/senha.
+   script configura o engine de segredos, o login por usuário/senha (pessoas) e o AppRole (aplicações).
 5. Para dar acesso a alguém (inclusive você mesmo, se quiser um perfil além do `ENGINEER_USER`),
    use `infra/scripts/create-team-member.ps1` — ver [`infra/docs/criar-novo-usuario.md`](infra/docs/criar-novo-usuario.md).
 6. (Opcional, mas recomendado) Rode a suíte de testes automatizados —
@@ -162,6 +162,35 @@ arquivo explicam o "porquê" de cada peça, não só o "o quê"):
   administrador da plataforma só se concede por
   [`infra/scripts/conceder-admin-plataforma.ps1`](infra/scripts/conceder-admin-plataforma.ps1).
   Testado em [`Test-Autorizacao.ps1`](infra/tests/caixa-preta/Test-Autorizacao.ps1).
+- **Aceite dos termos (LGPD)** no `_LOGIN` — `15`: `TERMO` guarda cada versão publicada dos termos de
+  uso e da política de privacidade, com o texto e o SHA-256 dele (calculado pelo banco); `ACEITE_TERMO`
+  guarda quem aceitou qual versão, quando (hora do banco) e de qual IP, e cada aceite vai sozinho para o
+  `LOG_SEGURANCA` (`TERMO_ACEITO`). Termo publicado não muda nem sai, nem pelo DBA (ORA-20111); a API só
+  lê os termos e só insere aceites. Versão nova só pelo DBA, com
+  [`infra/scripts/publicar-termo.ps1`](infra/scripts/publicar-termo.ps1): a partir dela, todo usuário
+  precisa aceitar de novo antes de voltar a usar o sistema. O texto que nasce é um **rascunho**.
+- **Endurecimento da revisão de segurança de 23/11/2026** — `16`: a API perdeu o que não usa (UPDATE no
+  `PERFIL`; do `USUARIO`, só pode mudar a coluna `ATIVO`), e o banco impede "desrevogar" token, aumentar
+  o teto dele ou trocar o dono ou a empresa (ORA-20112), até para o DBA. A regra "pelo menos um
+  administrador ativo" passou a contar só quem tem a conta ligada. Testado, com os termos, em
+  [`Test-TermosEEndurecimento.ps1`](infra/tests/caixa-preta/Test-TermosEEndurecimento.ps1).
+- **Convite por e-mail, confirmação com passkey e bloqueio por bloco IPv6** — `17` (24/11/2026):
+  - `CONVITE.ENVIADO_POR_EMAIL`: o segredo foi para o e-mail da própria pessoa, e não voltou para quem
+    pediu. Não muda depois de criado (ORA-20113);
+  - `USUARIO.EMAIL_CONFIRMADO_EM`: usar um convite que chegou **por e-mail** confirma o e-mail. Quem
+    grava é o gatilho do `CONVITE`, nunca a API;
+  - `TOKEN.VERIFICADO_EM`: a última vez que a pessoa usou a passkey na sessão. A API exige que seja
+    recente (`CONFIRMACAO_MINUTOS`, 5) para operação sensível. Só anda para a frente e nunca vai para o
+    futuro, nem pelo DBA (ORA-20112). O desafio ganhou a finalidade `CONFIRMACAO`;
+  - `TENTATIVA_LOGIN.IP_GRUPO`: as falhas contam pelo IPv4, ou pelo bloco /64 do IPv6, para quem
+    troca de endereço dentro do bloco não escapar do bloqueio.
+
+  Testado em [`Test-EmailEConfirmacao.ps1`](infra/tests/caixa-preta/Test-EmailEConfirmacao.ps1).
+### Correio de teste (Mailpit)
+A API manda por SMTP os convites e os avisos de segurança da conta. No desenvolvimento, o contêiner
+`kawashi-mailpit` (`docker compose up -d --no-deps mailpit`, versão fixada em `v1.33.1`) só **recebe**
+e mostra as mensagens em http://localhost:8025; nada sai para a internet. As portas ficam só em
+`127.0.0.1`. Em produção, a API aponta `MAIL_HOST`/`MAIL_PORT` para o servidor de verdade, com TLS.
 ### RBAC — perfis de acesso do time
 Perfis prontos que já definem automaticamente em qual ambiente cada pessoa pode
 ler/escrever, sem grant manual por tabela:
@@ -201,9 +230,12 @@ Quem invadir a API herda a de execução: não consegue criar, alterar nem apaga
 
 ### Âncora do log da aplicação
 [`infra/scripts/ancorar-log.ps1`](infra/scripts/ancorar-log.ps1) guarda no Vault o número e o hash da
-última linha do log de alterações de cada ambiente, e confere se o banco ainda bate com essa âncora.
-O encadeamento por hash dentro do banco acusa adulteração parcial; a âncora acusa também o DBA que
-altera o log e recalcula a corrente inteira.
+última linha dos **três** logs encadeados de cada ambiente — `LOG_ALTERACAO` (em
+`kawashi-secrets/log-ancora/<AMB>`), `LOG_SEGURANCA` e `LOG_PERMISSAO` (em
+`kawashi-secrets/log-ancora/<AMB>/<TABELA>`) — e confere se o banco ainda bate com cada âncora. O
+encadeamento por hash dentro do banco acusa adulteração parcial; a âncora acusa também o DBA que
+altera o log e recalcula a corrente inteira. A rotina diária (abaixo) ancora todo dia, só depois de
+conferir.
 
 ### Cadastro de contas — quem é, o que pode, quando a senha vence
 [`infra/scripts/cadastro-de-contas.ps1`](infra/scripts/cadastro-de-contas.ps1) mostra, para cada conta
@@ -262,13 +294,23 @@ Junto com isso, a API cifra CPF, e-mail e telefone antes de gravar e mascara na 
 repositório `tabelas-api-banco-usp`): o disco protege contra cópia do arquivo, a cifra de campo contra
 quem lê a tabela.
 
-### Secret Management (Vault) — parcial
-O Vault sobe via Docker com o engine KV `kawashi-secrets` e o método de login `userpass`
-configurados **por código** ([`infra/scripts/vault-init.ps1`](infra/scripts/vault-init.ps1)),
-não mais manualmente pela UI. Falta: a aplicação (repositório `tabelas-api-banco-usp`) ainda não
-lê o segredo do Vault em runtime, recebe a senha por variável de ambiente ou `.env` local gerado
-pelo `create-api-account.ps1`. Isso é o item **Dynamic Credentials** no roadmap abaixo, ainda
-pendente.
+### Secret Management (Vault) — pronto no código, ligado depois da persistência
+O Vault sobe via Docker com o engine KV `kawashi-secrets` e os métodos de login `userpass` (pessoas)
+e `approle` (aplicações) configurados **por código**
+([`infra/scripts/vault-init.ps1`](infra/scripts/vault-init.ps1)), não mais pela UI.
+
+[`infra/scripts/criar-approle.ps1`](infra/scripts/criar-approle.ps1) cria o papel de cada aplicação
+num ambiente, com uma política que só **lê** os segredos dela: o BFF, `bff/<AMB>`; a API, `cifra/<AMB>`,
+`bff/<AMB>` e a senha das suas duas contas (`api/<conta>`). O token do papel dura 5 minutos (só serve
+para a subida) e o `secret_id` vale 30 dias. Com `-Ligar`, grava a identidade do papel no `.env` da
+aplicação, que passa a ler os segredos do Vault na subida e **não sobe sem ele** (falha fechada); sem
+o papel, a aplicação continua lendo do `.env`. Testado em
+[`Test-AppRoleDoVault.ps1`](infra/tests/caixa-preta/Test-AppRoleDoVault.ps1).
+
+**Ainda não está ligado** de propósito: o Vault de desenvolvimento é em memória, e a cada reinício o
+papel some e a aplicação pararia. Liga-se quando o Vault ganhar persistência (junto com a recriação
+dos contêineres com volume, item pendente). Senha que expira sozinha (**Dynamic Credentials**)
+continua no roadmap.
 
 ### Conexão com o banco cifrada — aplicada
 [`infra/scripts/apply-network-hardening.ps1`](infra/scripts/apply-network-hardening.ps1) faz o
@@ -307,10 +349,12 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
       arquitetura de hospedagem (local vs AWS) ser decidida.
 - [x] Schema de log da aplicação por ambiente (só inserção para a API, encadeado por hash).
 - [x] API com duas contas por ambiente: execução (sem poder sobre estrutura) e migração.
-- [~] Âncora do log no Vault: script e conferência prontos; falta agendar a execução e, em produção,
-      usar uma credencial que o DBA não tenha.
+- [~] Âncora dos três logs encadeados no Vault: script, conferência e execução diária (rotina agendada)
+      prontos; falta, em produção, usar uma credencial que o DBA não tenha.
 - [x] Schemas `LOGIN` e `SESSAO` para o login da API, só por passkey (o desenho está em `tabelas-api-banco-usp/docs/modelo-de-dados.md`).
 - [x] Autorização multiempresa com as regras de cargo garantidas pelo banco (`14_autorizacao.sql`).
+- [x] Aceite versionado dos termos de uso e da política de privacidade, com prova (texto, hash, hora, IP) — LGPD (`15_aceite_de_termos.sql`). Falta a Kawashi redigir os textos de verdade.
+- [x] Endurecimento pós-revisão: permissões mínimas da API e token imutável depois de revogado (`16_endurecimento.sql`).
 - [ ] Acesso restrito e temporário a Homologação e Produção.
       (A segmentação por serviço com os schemas de exemplo SEFAZ/SIMPLES_NACIONAL foi removida:
       era só material de teste. Ver item 22 de `infra/docs/bugs-primeiro-teste.md`.)
@@ -327,12 +371,13 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 
 2. Camada de Identidade e Acesso (As Chaves)
 - [x] RBAC (Role-Based Access Control): perfis `EstagiarioDev`/`EstagiarioInfra`/`Desenvolvedor`/`Infra`/`HomologViewer` implementados (ver acima).
-- [~] Secret Management (Vault): infraestrutura do cofre pronta e configurada por código; falta a aplicação em si consumir os segredos em runtime.
+- [~] Secret Management (Vault): cofre configurado por código; API e BFF já sabem ler os segredos pelo AppRole (`criar-approle.ps1`); falta ligar, o que depende do Vault persistente.
 - [ ] Dynamic Credentials: Configurar o Vault para gerar senhas que expiram em curto prazo para o microserviço.
 - [ ] Zero Trust & MFA: Exigir segundo fator de autenticação para qualquer humano que tente acessar a base de Produção.
 
 3. Camada de Processo e Governança (O Gatekeeper)
 - [ ] Main Protection: Bloquear a branch main. Apenas o Engenheiro de Software faz o merge.
+- [~] CI: a cada push, o GitHub Actions recusa arquivo de segredo versionado e confere a sintaxe de todo script PowerShell (`.github/workflows/verificacao.yml`); os testes de verdade precisam do Oracle e do Vault e rodam na máquina de desenvolvimento.
 - [ ] SQL Linter no CI/CD: Script que valida se o .sql dos desenvolvedores usa o Tablespace correto e não tem comandos proibidos.
 - [ ] Deploy Automatizado: O robô de CI/CD é o único com permissão de escrita estrutural (DDL) em Produção.
 
@@ -345,7 +390,7 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 
 5. Camada de Resposta e Resiliência (O Escudo Ativo)
 - [ ] Database Firewall: Interceptar queries no Spring para bloquear padrões de SQL Injection em tempo real.
-- [ ] Rate Limiting: Bloquear usuários que tentem baixar um volume de dados desproporcional (Anti-Scraping).
+- [~] Rate Limiting: limite de pedidos por IP no BFF (geral e, mais baixo, nas cerimônias de login) e na API, com 429; falta o limite por volume de dados baixados (anti-scraping).
 - [ ] SOAR (Auto-Ban): Programar o SIEM para revogar o acesso de usuários que tocarem nas Honeytables.
 - [ ] Kill Switch: Criar um comando de emergência para isolar o banco de dados em caso de ataque massivo detectado.
 - [ ] Backup Health Check: Monitorar se os backups off-site estão sendo feitos e se o PITR (Point-in-Time Recovery) está funcional.
@@ -401,8 +446,10 @@ próprio acesso pelo Vault.
 ### Vault — configuração precisa ser reaplicada a cada subida (modo dev)
 O Vault roda em modo `-dev` (dados em memória, nada persiste). Toda vez que o container
 `kawashi-vault` é recriado, rode `infra/scripts/vault-init.ps1` antes de criar qualquer usuário —
-ele habilita o engine KV `kawashi-secrets` e o método de login `userpass` de forma idempotente
-(pode rodar quantas vezes quiser). Esse script também documenta, em comentários, o que precisa
+ele habilita o engine KV `kawashi-secrets` e os métodos de login `userpass` e `approle` de forma
+idempotente (pode rodar quantas vezes quiser). Se alguma aplicação já estiver ligada ao Vault
+(`criar-approle.ps1 -Ligar`), reponha também os segredos dela e rode o `criar-approle.ps1 -Ligar` de
+novo: o papel some junto com o resto, e a aplicação não sobe sem ele. Esse script também documenta, em comentários, o que precisa
 mudar quando o Vault for hospedado na AWS (storage persistente, auto-unseal, TLS, autenticação
 via IAM em vez de usuário/senha).
 

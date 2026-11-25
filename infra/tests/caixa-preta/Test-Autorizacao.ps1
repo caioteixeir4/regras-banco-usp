@@ -106,8 +106,11 @@ COMMIT;
     $noFixo = Invoke-Como $api "INSERT INTO $L.PERFIL_PERMISSAO (PERFIL_ID, PERMISSAO_ID, ATUALIZADO_POR) SELECT $adm, ID, 'USUARIO:1' FROM $L.PERMISSAO WHERE CODIGO = 'EMPRESA_LER';"
     $renomeia = Invoke-Como $api "UPDATE $L.PERFIL SET NOME = 'CHEFE', ATUALIZADO_POR = 'USUARIO:1' WHERE ID = $adm;"
     $desativa = Invoke-Como $api "UPDATE $L.PERFIL SET ATIVO = FALSE, ATUALIZADO_POR = 'USUARIO:1' WHERE ID = $adm;"
+    # A API nem tem UPDATE no PERFIL (16_endurecimento.sql); a trava do ADMINISTRADOR fixo vale ate para o DBA.
+    $renomeiaDba = Invoke-Como $engineerConn "ALTER SESSION SET CONTAINER = FREEPDB1;`nUPDATE $L.PERFIL SET NOME = 'CHEFE' WHERE ID = $adm;"
+    $desativaDba = Invoke-Como $engineerConn "ALTER SESSION SET CONTAINER = FREEPDB1;`nUPDATE $L.PERFIL SET ATIVO = FALSE WHERE ID = $adm;"
     $comum = Invoke-Como $api "INSERT INTO $L.PERFIL_PERMISSAO (PERFIL_ID, PERMISSAO_ID, ATUALIZADO_POR) SELECT $ope, ID, 'USUARIO:1' FROM $L.PERMISSAO WHERE CODIGO = 'PESSOA_LER';`nCOMMIT;"
-    $results += New-TestResult -Name "Permissao exclusiva nao vai para outro perfil (ORA-20108); o ADMINISTRADOR nao recebe permissao (20107), nao muda de nome nem e desativado (20101); permissao comum entra normalmente" -Passed (($exclusiva -match 'ORA-20108') -and ($noFixo -match 'ORA-20107') -and ($renomeia -match 'ORA-20101') -and ($desativa -match 'ORA-20101') -and ($comum -notmatch 'ORA-')) -Details "$exclusiva`n$noFixo`n$renomeia`n$desativa`n$comum"
+    $results += New-TestResult -Name "Permissao exclusiva nao vai para outro perfil (ORA-20108); o ADMINISTRADOR nao recebe permissao (20107); a API nao altera perfil (ORA-01031/41900) e nem o DBA renomeia ou desativa o ADMINISTRADOR (20101); permissao comum entra normalmente" -Passed (($exclusiva -match 'ORA-20108') -and ($noFixo -match 'ORA-20107') -and ($renomeia -match 'ORA-(01031|41900)') -and ($desativa -match 'ORA-(01031|41900)') -and ($renomeiaDba -match 'ORA-20101') -and ($desativaDba -match 'ORA-20101') -and ($comum -notmatch 'ORA-')) -Details "$exclusiva`n$noFixo`n$renomeia`n$desativa`n$renomeiaDba`n$desativaDba`n$comum"
 
     # --- perfil da mesma empresa e pelo menos um administrador ----------------------------------
     $deOutra = Invoke-Como $api "INSERT INTO $L.USUARIO_EMPRESA (USUARIO_ID, EMPRESA_ID, PERFIL_ID, ATUALIZADO_POR) VALUES ($u2, $empresa, $admOutra, 'USUARIO:1');"

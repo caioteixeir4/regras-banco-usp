@@ -165,7 +165,8 @@ flowchart LR
   linha por problema quando alguém alterou o conteúdo, apagou uma linha do meio ou apagou as últimas.
 - **Quem tem `DBA` conseguiria recalcular a corrente inteira** e enganar a view. Por isso existe a
   **âncora**: `scripts/ancorar-log.ps1` guarda no Vault o número e o hash da última linha, e a
-  conferência compara o banco com o Vault (testado em `Test-AncoraDoLog.ps1`, que faz esse ataque
+  conferência compara o banco com o Vault (vale para os três logs encadeados: `LOG_ALTERACAO`,
+  `LOG_SEGURANCA` e `LOG_PERMISSAO`; a rotina diária ancora todo dia) (testado em `Test-AncoraDoLog.ps1`, que faz esse ataque
   de verdade). No desenvolvimento o Vault usa a mesma credencial do DBA; em produção a âncora precisa
   ficar fora do alcance de quem administra o banco.
 - **Custo:** o gatilho trava a linha de controle até o fim da transação de quem insere, então as
@@ -385,7 +386,8 @@ e em quais empresas, e o `LOG_PERMISSAO` ao schema de log. A API recebe:
 
 | Tabela | A API pode |
 |---|---|
-| `PERFIL`, `PERFIL_PERMISSAO`, `USUARIO_EMPRESA` | ler, criar, alterar (**sem `DELETE`**: tirar permissão ou acesso é desativar) |
+| `PERFIL_PERMISSAO`, `USUARIO_EMPRESA` | ler, criar, alterar (**sem `DELETE`**: tirar permissão ou acesso é desativar) |
+| `PERFIL` | ler e criar (sem `UPDATE` desde o `16_endurecimento.sql`: a API não altera perfil) |
 | `PERMISSAO`, `ADMIN_PLATAFORMA` | **só ler**: ninguém cria permissão nem se promove a administrador da plataforma pela API |
 | `LOG_PERMISSAO` | **só ler**: quem grava são os gatilhos do `_LOGIN` |
 
@@ -416,6 +418,63 @@ O **administrador da plataforma** (`ADMIN_PLATAFORMA`) cria empresas novas pela 
 enxerga os dados delas. O papel só se concede com `infra/scripts/conceder-admin-plataforma.ps1`,
 pela conta do engenheiro: o gatilho grava quem concedeu e manda a concessão (e a revogação) para o
 `LOG_SEGURANCA`.
+
+## 2.7 Termos de uso e política de privacidade (LGPD)
+
+`15_aceite_de_termos.sql` guarda a prova do consentimento: qual texto a pessoa aceitou, quando e de
+onde.
+
+| Tabela | O que guarda | A API pode |
+|---|---|---|
+| `TERMO` | cada versão publicada de cada documento (`TERMOS_DE_USO`, `POLITICA_DE_PRIVACIDADE`), com o texto e o SHA-256 dele; vale a mais recente | **só ler** |
+| `ACEITE_TERMO` | quem aceitou qual versão, quando (hora do banco) e de qual IP; uma linha por usuário e versão | ler e **só inserir** |
+
+Os gatilhos garantem: o hash e quem publicou são postos pelo banco; termo publicado não muda nem sai,
+nem pelo DBA (ORA-20111); a hora do aceite é a do servidor; e cada aceite vai sozinho para o
+`LOG_SEGURANCA` (`TERMO_ACEITO`). Versão nova só com `infra/scripts/publicar-termo.ps1`, que confere
+se o hash calculado pelo banco é o do arquivo. Com versão nova publicada, a API recusa (403) as
+rotas de negócio de quem ainda não aceitou.
+
+## 2.8 Endurecimento da revisão de segurança
+
+`16_endurecimento.sql` fecha o que uma API comprometida conseguiria a mais do que a API normal: sem
+`UPDATE` no `PERFIL`; no `USUARIO`, `UPDATE` só na coluna `ATIVO` (nada de trocar handle ou e-mail);
+e o gatilho `TOKEN_IMUTAVEL_TRG` impede, até para o DBA, desrevogar um token, aumentar o teto dele ou
+trocar dono, empresa, escopo ou hash (ORA-20112).
+
+## 2.9 Convite por e-mail, confirmação com passkey e IPv6 por bloco
+
+`17_email_e_confirmacao.sql` dá ao banco o que ele precisa para os achados 1, 4, 5, 8 e 11 da revisão:
+
+| Coluna ou regra | Para quê | Quem garante |
+|---|---|---|
+| `CONVITE.ENVIADO_POR_EMAIL` | o segredo foi para o e-mail da própria pessoa, não para quem pediu | não muda depois de criado (ORA-20113) |
+| `USUARIO.EMAIL_CONFIRMADO_EM` | usar um convite que chegou por e-mail prova que a caixa é da pessoa | o gatilho `CONVITE_CONFIRMA_EMAIL_TRG` grava; a API não tem `UPDATE` nessa coluna |
+| `TOKEN.VERIFICADO_EM` | a última vez que a pessoa usou a passkey na sessão; operação sensível exige que seja de menos de `CONFIRMACAO_MINUTOS` | o `TOKEN_IMUTAVEL_TRG`: só para a frente, nunca no futuro, nem pelo DBA (ORA-20112) |
+| desafio `CONFIRMACAO` | a cerimônia de confirmação, presa ao usuário da sessão | `CK_DESAFIO_FINALIDADE` e `CK_DESAFIO_CADASTRO` |
+| `TENTATIVA_LOGIN.IP_GRUPO` | contar as falhas pelo IPv4 ou pelo bloco /64 do IPv6 | a API calcula; o `BLOQUEIO_IP` guarda o grupo |
+
+```mermaid
+sequenceDiagram
+    participant N as Navegador
+    participant B as BFF
+    participant A as API
+    participant D as Banco
+    N->>B: pedido sensível (ex.: trocar cargo)
+    B->>A: com o token da sessão
+    A->>D: TOKEN.VERIFICADO_EM é recente?
+    D-->>A: não
+    A-->>N: 403 "Confirme com sua passkey"
+    N->>B: /bff/auth/confirmar/opcoes
+    B->>A: desafio CONFIRMACAO, só as passkeys desta conta
+    N->>N: digital, rosto ou PIN
+    N->>B: /bff/auth/confirmar com a assinatura
+    B->>A: confere a assinatura e que a passkey é desta conta
+    A->>D: VERIFICADO_EM = agora e PASSKEY_CONFIRMADA no LOG_SEGURANCA
+    N->>B: repete o pedido sensível
+    B->>A: agora passa
+```
+
 ## 3. Como uma pessoa nova recebe acesso (onboarding via Vault)
 
 Nenhuma senha passa por chat, e-mail ou arquivo de texto em nenhum momento deste fluxo:

@@ -124,6 +124,18 @@ try {
     $outView2 = Invoke-Dba "SELECT 'QUEBRAS=' || COUNT(*) FROM $log.V_LOG_ALTERACAO_QUEBRAS;"
     $r = Invoke-Ancora 'Conferir'
     $results += New-TestResult -Name "O DBA apaga o fim do log e ajusta o controle (view vazia de novo): a conferencia contra o Vault acusa que a linha ancorada sumiu e que o log encolheu" -Passed (($outView2 -match 'QUEBRAS=0') -and ($r.Codigo -eq 1) -and ($r.Saida -match 'nao existe mais') -and ($r.Saida -match 'encolheu')) -Details "$outView2`ncodigo=$($r.Codigo)`n$($r.Saida)"
+
+    # --- os outros dois logs encadeados (LOG_SEGURANCA e LOG_PERMISSAO) tambem tem ancora ----------
+    $ordemP = [long]((Invoke-Dba "SELECT 'O=' || NVL(MAX(ORDEM), 0) FROM $log.LOG_PERMISSAO;") -replace '[^\d]', '')
+    if ($ordemP -gt 0) {
+        Invoke-Ancora 'Ancorar' | Out-Null   # o LOG_ALTERACAO esta adulterado por este teste: ele recusa, os outros ancoram
+        $ancoraP = ((docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv get '-field=ordem' 'kawashi-secrets/log-ancora/TESTE_INFRA/LOG_PERMISSAO' 2>$null) -join '').Trim()
+        $hashP = (Invoke-Dba "SELECT 'H=' || HASH FROM $log.LOG_PERMISSAO WHERE ORDEM = $ordemP;") -replace '(?s).*H=', '' -replace '\s', ''
+        Invoke-Dba "UPDATE $log.LOG_PERMISSAO SET HASH = RPAD('0', 64, '0') WHERE ORDEM = $ordemP;`nCOMMIT;" | Out-Null
+        $conf = Invoke-Ancora 'Conferir'
+        Invoke-Dba "UPDATE $log.LOG_PERMISSAO SET HASH = '$hashP' WHERE ORDEM = $ordemP;`nCOMMIT;" | Out-Null
+        $results += New-TestResult -Name "LOG_SEGURANCA e LOG_PERMISSAO tambem sao ancorados (log-ancora/<AMBIENTE>/<TABELA>), e adulterar a linha ancorada do LOG_PERMISSAO e acusado" -Passed (($ancoraP -eq "$ordemP") -and ($conf.Codigo -eq 1) -and ($conf.Saida -match 'DIVERGENCIA\] TESTE_INFRA LOG_PERMISSAO') -and ($conf.Saida -match 'mudou depois de ancorada')) -Details "ancora=$ancoraP esperado=$ordemP codigo=$($conf.Codigo)`n$($conf.Saida)"
+    }
 }
 finally {
     Write-Host "-> Limpando: linhas do teste, estado da corrente, ancora no Vault e conta descartavel..."
@@ -134,7 +146,9 @@ finally {
         $outLimpo = Invoke-Dba "SELECT 'QUEBRAS=' || COUNT(*) FROM $log.V_LOG_ALTERACAO_QUEBRAS;"
         $results += New-TestResult -Name "Depois da limpeza a corrente do ambiente de teste volta a estar inteira" -Passed ($outLimpo -match 'QUEBRAS=0') -Details $outLimpo
     }
-    docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv metadata delete 'kawashi-secrets/log-ancora/TESTE_INFRA' 2>&1 | Out-Null
+    foreach ($caminho in 'log-ancora/TESTE_INFRA', 'log-ancora/TESTE_INFRA/LOG_SEGURANCA', 'log-ancora/TESTE_INFRA/LOG_PERMISSAO') {
+        docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv metadata delete "kawashi-secrets/$caminho" 2>&1 | Out-Null
+    }
     if ($api) {
         Invoke-SqlPlus -ConnectString $engineerConn -Sql "ALTER SESSION SET CONTAINER = FREEPDB1;`nDROP USER $api CASCADE;`nEXIT;`n" | Out-Null
         docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv metadata delete "kawashi-secrets/api/$api" 2>&1 | Out-Null

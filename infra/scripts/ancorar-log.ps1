@@ -107,14 +107,14 @@ function Invoke-Consulta {
 }
 
 function Get-CampoDaAncora {
-    param([string]$Amb, [string]$Campo)
+    param([string]$Caminho, [string]$Campo)
     $argCampo = "-field=$Campo"
     # "Sem ancora ainda" faz o vault escrever na saida de erro; no Windows PowerShell isso viraria
     # excecao com ErrorActionPreference = Stop. A chamada roda com "Continue" e vale o codigo de saida.
     $anterior = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $valor = docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv get $argCampo "kawashi-secrets/log-ancora/$Amb" 2>&1
+        $valor = docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv get $argCampo "kawashi-secrets/$Caminho" 2>&1
         $codigo = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $anterior
@@ -123,65 +123,83 @@ function Get-CampoDaAncora {
     return (($valor | ForEach-Object { "$_" }) -join '').Trim()
 }
 
-Write-Host "== Kawashi - Ancora do log de alteracoes ($Acao) ==" -ForegroundColor Cyan
+# Os tres logs encadeados da aplicacao. O do LOG_ALTERACAO continua no caminho de antes
+# (log-ancora/<AMBIENTE>); os outros dois ficam em log-ancora/<AMBIENTE>/<TABELA>.
+function Get-Logs {
+    param([string]$Amb)
+    return @(
+        [pscustomobject]@{ Tabela = 'LOG_ALTERACAO'; Caminho = "log-ancora/$Amb" },
+        [pscustomobject]@{ Tabela = 'LOG_SEGURANCA'; Caminho = "log-ancora/$Amb/LOG_SEGURANCA" },
+        [pscustomobject]@{ Tabela = 'LOG_PERMISSAO'; Caminho = "log-ancora/$Amb/LOG_PERMISSAO" })
+}
+
+Write-Host "== Kawashi - Ancora dos logs encadeados ($Acao) ==" -ForegroundColor Cyan
 $divergencias = 0
 
 foreach ($amb in $Ambiente) {
     $log = "KAWASHI_ENV_${amb}_LOG"
-    $estado = Invoke-Consulta @"
+    foreach ($alvo in (Get-Logs $amb)) {
+        $tab = $alvo.Tabela
+        # Ambiente criado antes do 13/14 nao tem a tabela: pula com aviso, sem falhar.
+        $existe = Invoke-Consulta "SELECT 'EXISTE=' || COUNT(*) FROM dba_tables WHERE owner = '$log' AND table_name = '$tab';"
+        if ($existe -notmatch 'EXISTE=1') {
+            Write-Host "  [--]    $amb $tab - tabela nao existe neste ambiente" -ForegroundColor Yellow
+            continue
+        }
+        $estado = Invoke-Consulta @"
 SELECT 'ESTADO=' || c.ULTIMA_ORDEM || '|' || NVL(c.ULTIMO_HASH, '-') || '|' ||
-       (SELECT COUNT(*) FROM $log.V_LOG_ALTERACAO_QUEBRAS) || '|' ||
-       (SELECT NVL(MAX(ORDEM), 0) FROM $log.LOG_ALTERACAO)
-  FROM $log.LOG_CADEIA c WHERE c.TABELA = 'LOG_ALTERACAO';
+       (SELECT COUNT(*) FROM $log.V_${tab}_QUEBRAS) || '|' ||
+       (SELECT NVL(MAX(ORDEM), 0) FROM $log.$tab)
+  FROM $log.LOG_CADEIA c WHERE c.TABELA = '$tab';
 "@
-    if ($estado -notmatch 'ESTADO=(\d+)\|([0-9a-f]{64}|-)\|(\d+)\|(\d+)') {
-        throw "Nao consegui ler o estado da corrente de $log. Saida:`n$estado"
-    }
-    $ordem = [long]$Matches[1]; $hash = $Matches[2]; $quebras = [int]$Matches[3]; $maiorOrdem = [long]$Matches[4]
+        if ($estado -notmatch 'ESTADO=(\d+)\|([0-9a-f]{64}|-)\|(\d+)\|(\d+)') {
+            throw "Nao consegui ler o estado da corrente de $log.$tab. Saida:`n$estado"
+        }
+        $ordem = [long]$Matches[1]; $hash = $Matches[2]; $quebras = [int]$Matches[3]; $maiorOrdem = [long]$Matches[4]
 
-    $problemas = @()
-    if ($quebras -gt 0) { $problemas += "a corrente tem $quebras problema(s) (ver $log.V_LOG_ALTERACAO_QUEBRAS)" }
+        $problemas = @()
+        if ($quebras -gt 0) { $problemas += "a corrente tem $quebras problema(s) (ver $log.V_${tab}_QUEBRAS)" }
 
-    $ordemAncorada = Get-CampoDaAncora -Amb $amb -Campo 'ordem'
-    if ($null -ne $ordemAncorada -and $ordemAncorada -ne '') {
-        $hashAncorado = Get-CampoDaAncora -Amb $amb -Campo 'hash'
-        if ([long]$ordemAncorada -gt 0) {
-            $linha = Invoke-Consulta "SELECT 'HASH=' || HASH FROM $log.LOG_ALTERACAO WHERE ORDEM = $([long]$ordemAncorada);"
-            if ($linha -notmatch 'HASH=([0-9a-f]{64})') {
-                $problemas += "a linha ancorada (ordem $ordemAncorada) nao existe mais no banco"
-            } elseif ($Matches[1] -ne $hashAncorado) {
-                $problemas += "a linha de ordem $ordemAncorada mudou depois de ancorada (o hash do banco nao e o do Vault)"
+        $ordemAncorada = Get-CampoDaAncora -Caminho $alvo.Caminho -Campo 'ordem'
+        if ($null -ne $ordemAncorada -and $ordemAncorada -ne '') {
+            $hashAncorado = Get-CampoDaAncora -Caminho $alvo.Caminho -Campo 'hash'
+            if ([long]$ordemAncorada -gt 0) {
+                $linha = Invoke-Consulta "SELECT 'HASH=' || HASH FROM $log.$tab WHERE ORDEM = $([long]$ordemAncorada);"
+                if ($linha -notmatch 'HASH=([0-9a-f]{64})') {
+                    $problemas += "a linha ancorada (ordem $ordemAncorada) nao existe mais no banco"
+                } elseif ($Matches[1] -ne $hashAncorado) {
+                    $problemas += "a linha de ordem $ordemAncorada mudou depois de ancorada (o hash do banco nao e o do Vault)"
+                }
+            }
+            if ($maiorOrdem -lt [long]$ordemAncorada) {
+                $problemas += "o log encolheu: a ultima ordem no banco ($maiorOrdem) e menor que a ancorada ($ordemAncorada)"
             }
         }
-        if ($maiorOrdem -lt [long]$ordemAncorada) {
-            $problemas += "o log encolheu: a ultima ordem no banco ($maiorOrdem) e menor que a ancorada ($ordemAncorada)"
+
+        if ($problemas.Count -gt 0) {
+            $divergencias++
+            Write-Host "  [DIVERGENCIA] $amb $tab" -ForegroundColor Red
+            $problemas | ForEach-Object { Write-Host "       - $_" -ForegroundColor Red }
+            continue
         }
-    }
 
-    if ($problemas.Count -gt 0) {
-        $divergencias++
-        Write-Host "  [DIVERGENCIA] $amb" -ForegroundColor Red
-        $problemas | ForEach-Object { Write-Host "       - $_" -ForegroundColor Red }
-        continue
-    }
+        if ($Acao -eq 'Conferir') {
+            $descricao = if ($null -eq $ordemAncorada -or $ordemAncorada -eq '') { 'sem ancora ainda' } else { "bate com a ancora (ordem $ordemAncorada)" }
+            Write-Host "  [OK]    $amb $tab - corrente inteira, $descricao; ultima ordem no banco: $ordem" -ForegroundColor Green
+            continue
+        }
 
-    if ($Acao -eq 'Conferir') {
-        $descricao = if ($null -eq $ordemAncorada -or $ordemAncorada -eq '') { 'sem ancora ainda' } else { "bate com a ancora (ordem $ordemAncorada)" }
-        Write-Host "  [OK]    $amb - corrente inteira, $descricao; ultima ordem no banco: $ordem" -ForegroundColor Green
-        continue
+        $quando = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        # Log ainda vazio: o Vault trata "chave=-" como "ler da entrada padrao", entao o marcador e outro.
+        $hashParaVault = if ($hash -eq '-') { 'vazio' } else { $hash }
+        $saidaVault = docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv put "kawashi-secrets/$($alvo.Caminho)" `
+            ordem=$ordem hash=$hashParaVault ancorado_em=$quando 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Nao consegui gravar a ancora de $amb $tab no Vault (rode vault-init.ps1 se o Vault foi recriado). Saida:`n$($saidaVault -join "`n")"
+        }
+        Write-Host "  [OK]    $amb $tab - ancorado na ordem $ordem" -ForegroundColor Green
     }
-
-    $quando = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-    # Log ainda vazio: o Vault trata "chave=-" como "ler da entrada padrao", entao o marcador e outro.
-    $hashParaVault = if ($hash -eq '-') { 'vazio' } else { $hash }
-    $saidaVault = docker exec -e VAULT_TOKEN=$VaultToken kawashi-vault vault kv put "kawashi-secrets/log-ancora/$amb" `
-        ordem=$ordem hash=$hashParaVault ancorado_em=$quando 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Nao consegui gravar a ancora de $amb no Vault (rode vault-init.ps1 se o Vault foi recriado). Saida:`n$($saidaVault -join "`n")"
-    }
-    Write-Host "  [OK]    $amb - ancorado na ordem $ordem" -ForegroundColor Green
 }
-
 if ($divergencias -gt 0) {
     Write-Host ""
     Write-Host "$divergencias ambiente(s) com divergencia. Nada foi ancorado por cima deles: investigue antes." -ForegroundColor Red

@@ -1,0 +1,43 @@
+# Integracao continua do repositorio de regras. Os testes de verdade (infra/tests/Run-AllTests.ps1)
+# precisam do Oracle e do Vault no Docker, com o .env (senhas) que nao vai para o GitHub: rodam na
+# maquina de desenvolvimento. Aqui, a cada push e pull request:
+#   - nenhum arquivo de segredo versionado (.env, chaves, certificados);
+#   - todo script PowerShell (.ps1) e analisado pelo proprio PowerShell: erro de sintaxe para aqui,
+#     antes de alguem rodar o script num banco.
+name: Verificacao
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verificacao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nenhum segredo versionado
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|\.p12$|\.pfx$|\.jks$|\.pem$|\.key$|unseal|root-token'; then
+            echo "::error::Arquivo de segredo no repositorio (acima). Tire do git e troque o segredo."
+            exit 1
+          fi
+
+      - name: Sintaxe dos scripts PowerShell
+        shell: pwsh
+        run: |
+          $erros = 0
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $tokens = $null; $falhas = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$falhas) | Out-Null
+            foreach ($f in $falhas) {
+              Write-Host "::error file=$($_.FullName),line=$($f.Extent.StartLineNumber)::$($f.Message)"
+              $erros++
+            }
+          }
+          if ($erros -gt 0) { exit 1 }
+          Write-Host "Scripts PowerShell sem erro de sintaxe."

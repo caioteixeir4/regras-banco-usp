@@ -47,7 +47,7 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (44 arquivos, 386 casos na última execução completa, 23/11/2026). O
+Arquivos de teste atuais, por categoria (47 arquivos, 404 casos na última execução completa, 24/11/2026). O
 histórico da contagem está nas rodadas abaixo: a remoção dos schemas de serviço tirou 3 arquivos, e
 o schema de log trouxe 1 arquivo com 16 casos.
 
@@ -67,7 +67,8 @@ o schema de log trouxe 1 arquivo com 16 casos.
   `Test-DropPluggableDatabaseBloqueado.ps1`, `Test-ControleColetivoDentroDoAmbiente.ps1`,
   `Test-ContaApiViaProxy.ps1`, `Test-SchemaLogSomenteInsercao.ps1`, `Test-AncoraDoLog.ps1`,
   `Test-CriptografiaEmDisco.ps1`, `Test-CadastroDeContas.ps1`, `Test-DesligamentoDePessoa.ps1`,
-  `Test-RotacaoSenhaApi.ps1`, `Test-ConexaoCifrada.ps1`, `Test-SchemaLogin.ps1`
+  `Test-RotacaoSenhaApi.ps1`, `Test-ConexaoCifrada.ps1`, `Test-SchemaLogin.ps1`, `Test-Autorizacao.ps1`,
+  `Test-TermosEEndurecimento.ps1`, `Test-AppRoleDoVault.ps1`, `Test-EmailEConfirmacao.ps1`
 - `outros/`: `Test-OnboardingEndToEnd.ps1`, `Test-ConexaoAplicacaoSpring.ps1`,
   `Test-LimiteSessoesAplicacao.ps1`, `Test-RotinaDiaria.ps1`
 
@@ -339,7 +340,56 @@ Itens 31 (complemento), 32 e 33 de `bugs-primeiro-teste.md`.
   autorização.
 - `Test-InventarioDeSeguranca.ps1`: passou a esperar `KAWASHI_LIGAR_AUTORIZACAO`. Ele falhou primeiro,
   como deve: procedure nova em `SYS` sem estar declarada é exatamente o que ele vigia.
-- Total da suíte: **386** casos em **44** arquivos, todos passando.### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
+- Total da suíte: **386** casos em **44** arquivos, todos passando.
+
+### Rodada "pontas soltas antes dos testes" (23/11/2026)
+
+- `Test-TermosEEndurecimento.ps1` (novo, caixa-preta, 8 casos): os termos (`15_aceite_de_termos.sql`)
+  e o endurecimento (`16_endurecimento.sql`) valem no banco:
+  - a API não publica termo e não altera nem apaga aceite;
+  - `publicar-termo.ps1` publica um texto de mais de 4 mil caracteres com acentos, e o SHA-256
+    calculado pelo banco é igual ao do arquivo;
+  - termo publicado não muda nem sai, nem pelo DBA (ORA-20111);
+  - o aceite fica com a hora do banco (a informada é ignorada), é único por versão e vai para o
+    `LOG_SEGURANCA`;
+  - da conta, a API só muda `ATIVO`;
+  - token revogado não volta, o teto não aumenta e a empresa não muda, nem pelo DBA (ORA-20112).
+
+  Conferido quebrando de propósito: com o gatilho do token desligado no `TESTE_INFRA`, o caso do
+  token (e o inventário dos gatilhos) falhou; religado em seguida. O Oracle 23 responde ORA-41900
+  ("missing UPDATE privilege"), e não ORA-01031, quando a conta tem outra permissão no objeto: os
+  testes aceitam os dois.
+- `Test-AppRoleDoVault.ps1` (novo, caixa-preta, 4 casos): no Vault de verdade, o papel do BFF só lê
+  o próprio segredo e não escreve; o da API lê cifra, bff e a senha das duas contas dela, e nada de
+  outra conta ou de outro ambiente; o token dura no máximo 5 minutos. Conferido com a política trocada
+  por `kawashi-secrets/data/*`: os casos do BFF e da API falharam.
+- `Test-AncoraDoLog.ps1` (de 8 para 9): ancora também o `LOG_PERMISSAO` e o `LOG_SEGURANCA`, e o
+  ataque do DBA no `LOG_PERMISSAO` é denunciado. Conferido com o script ancorando só o
+  `LOG_ALTERACAO`: o caso novo falhou.
+- `Test-Autorizacao.ps1`: a API não tem mais `UPDATE` no `PERFIL` (ORA-01031/41900), e a trava do
+  ADMINISTRADOR fixo (ORA-20101) passou a ser conferida pelo DBA.
+- `Test-SchemaLogin.ps1`: as permissões exatas incluem `TERMO` (só ler) e `ACEITE_TERMO` (ler e criar),
+  sem `UPDATE` em `PERFIL` e `USUARIO`, e conferem a permissão por coluna (`USUARIO.ATIVO`).
+- Total da suíte: **399** casos em **46** arquivos, todos passando.
+
+### Rodada "convite por e-mail, confirmação com passkey e IPv6" (24/11/2026)
+
+- `Test-EmailEConfirmacao.ps1` (novo, caixa-preta, 5 casos): o passo 17 vale no banco:
+  - os 6 ambientes têm as colunas novas, os gatilhos do convite e o parâmetro `CONFIRMACAO_MINUTOS`;
+  - o e-mail só fica confirmado quando um convite que chegou por e-mail é usado; o da equipe não
+    confirma; e a API não marca o e-mail como confirmado sozinha;
+  - como o convite foi entregue não muda depois, nem pelo DBA (ORA-20113);
+  - `TOKEN.VERIFICADO_EM` só anda para a frente, nunca vai para o futuro e não é apagado, nem pelo DBA
+    (ORA-20112);
+  - o desafio de confirmação precisa de um usuário, e a confirmação que falha entra na
+    `TENTATIVA_LOGIN` com o grupo do IP.
+
+  Conferido quebrando de propósito: com o gatilho que confirma o e-mail desligado no `TESTE_INFRA`,
+  os dois casos ligados a ele falharam; religado em seguida.
+- `Test-SchemaLogin.ps1`: a API lê 11 parâmetros de segurança (o 11º é `CONFIRMACAO_MINUTOS`).
+- Total da suíte: **404** casos em **47** arquivos, todos passando.
+
+### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 
 - `Test-TrilhaSegurancaFailover.ps1`: força `KAWASHI_WRITE_SECURITY_LOG` a falhar de verdade na
   gravação principal (um `DETAILS` maior que a coluna aguenta) e confirma que o fallback
