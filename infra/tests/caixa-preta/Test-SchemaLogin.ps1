@@ -67,7 +67,7 @@ try {
     $privs = Invoke-Sys "SELECT 'P=' || LISTAGG(REPLACE(owner, '${amb}_', '') || '.' || table_name || ':' || privilege, ',') WITHIN GROUP (ORDER BY owner, table_name, privilege) FROM dba_tab_privs WHERE grantee = '${amb}_APP' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
     # Inclui as tabelas da autorizacao (14), dos termos (15) e o endurecimento (16), todas no _LOGIN.
     $esperado = 'P=LOGIN.ACEITE_TERMO:INSERT,LOGIN.ACEITE_TERMO:SELECT,LOGIN.ADMIN_PLATAFORMA:SELECT,LOGIN.CODIGO_RECUPERACAO:INSERT,LOGIN.CODIGO_RECUPERACAO:SELECT,LOGIN.CODIGO_RECUPERACAO:UPDATE,' +
-        'LOGIN.CONVITE:INSERT,LOGIN.CONVITE:SELECT,LOGIN.CONVITE:UPDATE,LOGIN.PARAMETRO_SEGURANCA:SELECT,' +
+        'LOGIN.CONVITE:INSERT,LOGIN.CONVITE:SELECT,LOGIN.CONVITE:UPDATE,LOGIN.CONVITE_VINCULO:INSERT,LOGIN.CONVITE_VINCULO:SELECT,LOGIN.PARAMETRO_SEGURANCA:SELECT,' +
         'LOGIN.PASSKEY:INSERT,LOGIN.PASSKEY:SELECT,LOGIN.PASSKEY:UPDATE,LOGIN.PERFIL:INSERT,LOGIN.PERFIL:SELECT,' +
         'LOGIN.PERFIL_PERMISSAO:INSERT,LOGIN.PERFIL_PERMISSAO:SELECT,LOGIN.PERFIL_PERMISSAO:UPDATE,LOGIN.PERMISSAO:SELECT,LOGIN.TERMO:SELECT,' +
         'LOGIN.USUARIO:INSERT,LOGIN.USUARIO:SELECT,LOGIN.USUARIO_EMPRESA:INSERT,LOGIN.USUARIO_EMPRESA:SELECT,LOGIN.USUARIO_EMPRESA:UPDATE,' +
@@ -75,7 +75,9 @@ try {
         'SESSAO.DESAFIO:UPDATE,SESSAO.TOKEN:INSERT,SESSAO.TOKEN:SELECT,SESSAO.TOKEN:UPDATE'
     # Permissao por coluna: do USUARIO, a API so liga e desliga (ATIVO).
     $colunas = Invoke-Sys "SELECT 'C=' || LISTAGG(table_name || '.' || column_name || ':' || privilege, ',') WITHIN GROUP (ORDER BY table_name, column_name) FROM dba_col_privs WHERE grantee = '${amb}_APP' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
-    $results += New-TestResult -Name "A conta de execucao da API tem EXATAMENTE: passkey, convite, codigo de recuperacao, permissao de perfil, vinculo com empresa, token, desafio e bloqueio de IP (ler, criar, alterar); usuario e perfil (ler e criar; do usuario, UPDATE so na coluna ATIVO); aceite de termos (ler e criar); parametros, termos, lista de permissoes e administradores da plataforma (so ler). Nenhum DELETE" -Passed ((($privs -replace '\s', '') -eq $esperado) -and (($colunas -replace '\s', '') -eq 'C=USUARIO.ATIVO:UPDATE')) -Details "obtido:  $($privs -replace '\s', '') $colunas`nesperado: $esperado C=USUARIO.ATIVO:UPDATE"
+    # Por coluna: do USUARIO so ATIVO; do convite de vinculo, so as colunas da resposta (passo 18).
+    $colunasEsperadas = 'C=CONVITE_VINCULO.IP_RESPOSTA:UPDATE,CONVITE_VINCULO.RESPONDIDO_POR:UPDATE,CONVITE_VINCULO.SITUACAO:UPDATE,USUARIO.ATIVO:UPDATE'
+    $results += New-TestResult -Name "A conta de execucao da API tem EXATAMENTE: passkey, convite, codigo de recuperacao, permissao de perfil, vinculo com empresa, token, desafio e bloqueio de IP (ler, criar, alterar); usuario e perfil (ler e criar; do usuario, UPDATE so na coluna ATIVO); aceite de termos (ler e criar); convite de vinculo (ler, criar e, so nas colunas da resposta, alterar); parametros, termos, lista de permissoes e administradores da plataforma (so ler). Nenhum DELETE" -Passed ((($privs -replace '\s', '') -eq $esperado) -and (($colunas -replace '\s', '') -eq $colunasEsperadas)) -Details "obtido:  $($privs -replace '\s', '') $colunas`nesperado: $esperado $colunasEsperadas"
 
     $migPriv = Invoke-Sys "SELECT 'M=' || COUNT(*) FROM dba_tab_privs WHERE grantee = '$amb' AND owner IN ('${amb}_LOGIN', '${amb}_SESSAO');"
     $migLe = Invoke-Como $connMig "SELECT COUNT(*) FROM ${amb}_LOGIN.USUARIO;"

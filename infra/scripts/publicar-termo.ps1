@@ -94,6 +94,12 @@ function Invoke-SqlComoEngenheiro {
 # O texto: bytes UTF-8 sem BOM, sem espacos sobrando nas pontas.
 $texto = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Arquivo), [System.Text.Encoding]::UTF8).Trim()
 if ($texto.Length -lt 50) { throw 'Texto curto demais para um termo (menos de 50 caracteres).' }
+# Campos do modelo ainda nao preenchidos ({ Nome da empresa }, { CNPJ da empresa }...): publica, mas avisa.
+$abertos = @([regex]::Matches($texto, '\{ [^{}]{2,60} \}') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+if ($abertos.Count -gt 0) {
+    Write-Host "AVISO: o texto tem $($abertos.Count) campo(s) do modelo sem preencher: $($abertos -join ', ')." -ForegroundColor Yellow
+    Write-Host "       Para valer com dados reais, preencha e publique uma versao nova." -ForegroundColor Yellow
+}
 $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($texto)
 $hashLocal = -join ([System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') })
 $b64Texto = [Convert]::ToBase64String($bytes)

@@ -1,0 +1,38 @@
+TERMOS DE USO DO SISTEMA KAWASHI
+Versão 2
+
+1. QUEM SOMOS E O QUE É O SISTEMA
+O sistema Kawashi é oferecido por { Nome da empresa }, CNPJ { CNPJ da empresa }, com sede em { Endereço da empresa } ("Kawashi"). Ele serve para empresas clientes da Kawashi cadastrarem e consultarem os seus próprios dados: a empresa, as filiais, as pessoas ligadas a ela (clientes, colaboradores, sócios e fornecedores), os contatos e os endereços.
+
+2. QUEM PODE USAR
+Só usa o sistema quem recebeu acesso: o administrador da plataforma (a equipe da Kawashi) cria a empresa e o primeiro administrador dela; o administrador de cada empresa dá acesso às outras pessoas da empresa, com um cargo (perfil). O acesso é pessoal e intransferível.
+
+3. COMO VOCÊ ENTRA
+3.1. O sistema não usa senha. Você entra com uma passkey: uma chave guardada no seu aparelho e liberada pela sua digital, pelo seu rosto ou pelo PIN do aparelho. A chave secreta nunca sai do aparelho.
+3.2. A primeira passkey é cadastrada por um convite de uso único que chega ao seu e-mail. Ao cadastrá-la, você recebe códigos de recuperação, que aparecem uma única vez.
+3.3. Você é responsável por: guardar os códigos de recuperação em lugar seguro; não emprestar o aparelho desbloqueado com a sua passkey; não repassar o convite nem os códigos a ninguém; e remover a passkey de um aparelho que perdeu ou que deixou de usar.
+3.4. Algumas operações (cadastrar ou remover passkey, gerar códigos, dar acesso ou cargo a alguém, criar empresas) pedem que você confirme com a passkey de novo. É para que uma sessão esquecida aberta não seja usada por outra pessoa.
+3.5. Se perceber acesso que não foi você (por exemplo, um e-mail de aviso de segurança que você não reconhece), use "Sair de todos os aparelhos", remova as passkeys que não reconhece e avise o administrador da sua empresa.
+
+4. O QUE VOCÊ PODE E O QUE NÃO PODE FAZER
+4.1. Você pode usar o sistema apenas para as atividades da empresa em que recebeu acesso, dentro do que o seu cargo permite.
+4.2. Você não pode: tentar acessar dados de outra empresa ou funções que o seu cargo não permite; tentar contornar as proteções do sistema (limites de pedidos, bloqueios, confirmações); automatizar o acesso com robôs sem autorização da Kawashi; cadastrar dados de terceiros sem ter uma base legal para isso; nem usar o sistema para qualquer finalidade ilícita.
+4.3. Os dados que você cadastra sobre outras pessoas (clientes, colaboradores, sócios, fornecedores) são de responsabilidade da sua empresa, que decide por que e como tratá-los. A Kawashi os guarda e processa em nome da sua empresa, seguindo as instruções dela e a Política de Privacidade.
+
+5. REGISTROS DE USO
+Para a segurança de todos, o sistema registra: cada pedido feito (quem, quando, de qual endereço IP e o que foi pedido, sem o conteúdo), cada alteração de cadastro (quem alterou qual registro e quando), cada evento de segurança (entrada, saída, passkeys, convites, bloqueios) e cada mudança de cargo. Esses registros não podem ser alterados nem apagados pelo sistema e servem para investigar incidentes e acessos indevidos.
+
+6. DISPONIBILIDADE E LIMITES
+A Kawashi se esforça para manter o sistema disponível e seguro, mas ele pode passar por manutenções e interrupções. Para proteger o serviço, há limites de pedidos por endereço e bloqueio temporário depois de tentativas de entrada com falha.
+
+7. SUSPENSÃO E ENCERRAMENTO DO ACESSO
+O administrador da sua empresa pode tirar o seu acesso a qualquer momento, e a Kawashi pode suspender o acesso de quem descumprir estes Termos ou colocar o sistema em risco. Quando a empresa deixa de ser cliente, ela é inativada e todas as sessões dela caem na hora.
+
+8. PRIVACIDADE
+O tratamento dos seus dados pessoais está descrito na Política de Privacidade, que faz parte destes Termos.
+
+9. MUDANÇAS NESTES TERMOS
+Quando estes Termos mudarem, a versão nova aparece no sistema antes de qualquer outra tela, e você só continua usando depois de ler e aceitar. Cada aceite fica registrado com a versão, a data e o endereço IP.
+
+10. CONTATO E FORO
+Dúvidas sobre estes Termos: { E-mail de atendimento }. Fica eleito o foro da comarca de { Cidade/UF do foro }, sem prejuízo dos direitos do consumidor, quando aplicáveis.

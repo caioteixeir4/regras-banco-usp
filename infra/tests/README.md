@@ -47,7 +47,7 @@ Cada `Test-*.ps1` é independente: cria seus próprios dados descartáveis (usu�
 | `caixa-preta/` | Comportamento observável de fora, sem olhar para nenhum catálogo interno: novos usuários, conexões (corretas/erradas/duplicadas), e permissões de CRUD/isolamento. | Só a resposta do login/proxy/DML (aceito, `ORA-01017`, `ORA-28000`, `ORA-01031`/`ORA-41900`, `ORA-00942`, `ORA-01920`...). |
 | `outros/` | Integração: a automação de onboarding (`create-team-member.ps1`) e a conta de aplicação (Spring) de ponta a ponta, nos dois sistemas que tocam (Oracle + Vault). | Estado combinado em Oracle **e** Vault, mais comportamento de conexão/CRUD. |
 
-Arquivos de teste atuais, por categoria (47 arquivos, 404 casos na última execução completa, 24/11/2026). O
+Arquivos de teste atuais, por categoria (49 arquivos, 414 casos na última execução completa, 24/11/2026). O
 histórico da contagem está nas rodadas abaixo: a remoção dos schemas de serviço tirou 3 arquivos, e
 o schema de log trouxe 1 arquivo com 16 casos.
 
@@ -68,7 +68,8 @@ o schema de log trouxe 1 arquivo com 16 casos.
   `Test-ContaApiViaProxy.ps1`, `Test-SchemaLogSomenteInsercao.ps1`, `Test-AncoraDoLog.ps1`,
   `Test-CriptografiaEmDisco.ps1`, `Test-CadastroDeContas.ps1`, `Test-DesligamentoDePessoa.ps1`,
   `Test-RotacaoSenhaApi.ps1`, `Test-ConexaoCifrada.ps1`, `Test-SchemaLogin.ps1`, `Test-Autorizacao.ps1`,
-  `Test-TermosEEndurecimento.ps1`, `Test-AppRoleDoVault.ps1`, `Test-EmailEConfirmacao.ps1`
+  `Test-TermosEEndurecimento.ps1`, `Test-AppRoleDoVault.ps1`, `Test-EmailEConfirmacao.ps1`,
+  `Test-ConviteDeVinculo.ps1`, `Test-VpdInfra.ps1`
 - `outros/`: `Test-OnboardingEndToEnd.ps1`, `Test-ConexaoAplicacaoSpring.ps1`,
   `Test-LimiteSessoesAplicacao.ps1`, `Test-RotinaDiaria.ps1`
 
@@ -388,6 +389,21 @@ Itens 31 (complemento), 32 e 33 de `bugs-primeiro-teste.md`.
   os dois casos ligados a ele falharam; religado em seguida.
 - `Test-SchemaLogin.ps1`: a API lê 11 parâmetros de segurança (o 11º é `CONFIRMACAO_MINUTOS`).
 - Total da suíte: **404** casos em **47** arquivos, todos passando.
+
+### Rodada "convite de vínculo e VPD" (24/11/2026)
+
+- `Test-ConviteDeVinculo.ps1` (novo, caixa-preta, 5 casos): o passo 18 vale no banco: a API tem de dizer
+  quem convidou e a hora é a do banco; quem convidou, IP e hora não mudam e o convite não se apaga (a API
+  nem tem permissão, e o DBA é barrado, ORA-20114); só o convidado aceita, uma vez; o convite e a resposta
+  vão sozinhos para o `LOG_PERMISSAO` e o `LOG_SEGURANCA`, com o IP.
+- `Test-VpdInfra.ps1` (novo, caixa-preta, 5 casos): duas pessoas descartáveis entram por proxy no
+  `TESTE_DEV`. A de perfil Infra lê 0 linhas das 5 tabelas de negócio, não insere (ORA-28115) nem
+  altera, e não consegue tirar a política; a de Desenvolvimento vê o mesmo que o SYS. Conferido trocando
+  a função da política por uma que não filtra: os dois casos da Infra falharam; restaurada em seguida.
+- `Test-SchemaLogin.ps1`: as permissões exatas incluem o convite de vínculo (ler, criar e, só nas
+  colunas da resposta, alterar).
+- `Test-InventarioDeSeguranca.ps1`: passou a esperar `KAWASHI_VPD_NEGOCIO` e `KAWASHI_LIGAR_VPD` em SYS.
+- Total da suíte: **414** casos em **49** arquivos, todos passando.
 
 ### Destaques desta rodada (caixa-branca "resiliência" e "consistência")
 

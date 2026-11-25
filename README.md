@@ -86,13 +86,19 @@ diagramas carregam o Mermaid pela internet.
    `healthy` (`docker ps`), pode levar alguns minutos no primeiro boot.
 3. Rode `infra/scripts/verify-environment.ps1` — confere se sobrou algum objeto `KAWASHI_*`
    inválido (PL/SQL com erro de compilação) e se os jobs agendados estão ativos, depois do
-   bootstrap `01` a `17` (muito PL/SQL aqui nunca tinha rodado contra um Oracle de verdade).
+   bootstrap `01` a `19` (muito PL/SQL aqui nunca tinha rodado contra um Oracle de verdade).
 4. Rode `infra/scripts/vault-init.ps1` — o Vault sobe "vazio" toda vez (modo dev), esse
    script configura o engine de segredos, o login por usuário/senha (pessoas) e o AppRole (aplicações).
 5. Para dar acesso a alguém (inclusive você mesmo, se quiser um perfil além do `ENGINEER_USER`),
    use `infra/scripts/create-team-member.ps1` — ver [`infra/docs/criar-novo-usuario.md`](infra/docs/criar-novo-usuario.md).
 6. (Opcional, mas recomendado) Rode a suíte de testes automatizados —
    `infra/tests/Run-AllTests.ps1` — ver [`infra/tests/README.md`](infra/tests/README.md).
+7. (Opcional) Suba também a API e o BFF no Docker: compile os dois
+   (`mvn -o package -DskipTests` em `tabelas-api-banco-usp` e em `bff-banco-usp`, lado a lado com este
+   repositório) e rode `docker compose --profile apps up -d --build --no-deps api bff` em `infra/`. O
+   site fica em http://localhost:9090; a API não é publicada na máquina (só o BFF a enxerga, pela rede
+   do Docker). O `--no-deps` é de propósito: enquanto o Oracle não tiver volume de dados, um `up` que o
+   recrie apaga o banco.
 
 Todo este fluxo já foi validado ponta a ponta contra um Oracle/Vault reais — 15 bugs foram
 encontrados e corrigidos nesse processo. Detalhes de cada um (sintoma, causa raiz, correção)
@@ -186,6 +192,20 @@ arquivo explicam o "porquê" de cada peça, não só o "o quê"):
     troca de endereço dentro do bloco não escapar do bloqueio.
 
   Testado em [`Test-EmailEConfirmacao.ps1`](infra/tests/caixa-preta/Test-EmailEConfirmacao.ps1).
+- **Convite de vínculo** — `18` (24/11/2026): o administrador de uma empresa convida quem JÁ tem conta em
+  outra empresa, e só a própria pessoa aceita (logada com a passkey dela). `CONVITE_VINCULO` guarda quem
+  convidou, quando (hora do banco), de qual IP, para qual empresa e cargo, e a resposta (quem, quando,
+  de qual IP). Nada disso muda depois, nem pelo DBA, e nada se apaga (ORA-20114); aceitar ou recusar,
+  só o convidado. O convite e a resposta vão sozinhos para o `LOG_PERMISSAO` e o `LOG_SEGURANCA` (com o
+  IP), e o acesso criado aponta para o convite (`USUARIO_EMPRESA.CONVITE_VINCULO_ID`). Testado em
+  [`Test-ConviteDeVinculo.ps1`](infra/tests/caixa-preta/Test-ConviteDeVinculo.ps1).
+- **VPD: a equipe de Infra não vê linha de negócio** — `19`: o Oracle acrescenta sozinho um filtro a
+  toda consulta nas tabelas de negócio (`EMPRESA`, `FILIAL`, `PESSOA`, `CONTATO`, `ENDERECO`). Quem entra
+  por proxy com uma conta de perfil Infra ou EstagiarioInfra (o perfil vem do cadastro de contas) não
+  lê, não altera, não insere e não apaga nenhuma linha; a API e o time de Desenvolvimento não mudam. A
+  política é posta por `SYS.KAWASHI_LIGAR_VPD`, também chamada pelo `afterMigrate` da API. Testado em
+  [`Test-VpdInfra.ps1`](infra/tests/caixa-preta/Test-VpdInfra.ps1) (com pessoas de Infra e de
+  Desenvolvimento entrando de verdade).
 ### Correio de teste (Mailpit)
 A API manda por SMTP os convites e os avisos de segurança da conta. No desenvolvimento, o contêiner
 `kawashi-mailpit` (`docker compose up -d --no-deps mailpit`, versão fixada em `v1.33.1`) só **recebe**
@@ -366,8 +386,8 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - [x] Conexão com o banco cifrada (AES-256 + SHA-256 exigidos) e listener travado (`apply-network-hardening.ps1`).
 - [x] Troca da senha da API sem derrubar a aplicação (`rotate-api-password.ps1`, troca gradual do Oracle 23ai).
 - [ ] Recriar o container do Oracle com as portas só em `127.0.0.1` **e** com um volume de dados (hoje o banco mora dentro do container; ver item 26 de `infra/docs/bugs-primeiro-teste.md`).
-- [ ] VPD (Virtual Private Database): Criar políticas para que a equipe de infra nunca veja linhas de dados de documentos de negócio.
-- [ ] Confidential Computing: Pesquisar o uso de Enclaves (Intel SGX) para processar dados na RAM de forma isolada.
+- [~] VPD (Virtual Private Database): **a equipe de Infra não vê linha de negócio** (`19_vpd_infra.sql`, testado). Falta, se quiser, a segunda barreira do isolamento entre empresas na API (exige passar a empresa da sessão ao banco a cada conexão do pool) (ver [`infra/docs/pesquisa-protecoes-avancadas.md`](infra/docs/pesquisa-protecoes-avancadas.md)).
+- [ ] Confidential Computing (enclaves): **pesquisado**; não roda num computador comum (SGX saiu dos processadores de PC; TDX e SEV-SNP são de servidor e nuvem). Trabalho futuro (ver [`infra/docs/pesquisa-protecoes-avancadas.md`](infra/docs/pesquisa-protecoes-avancadas.md)).
 
 2. Camada de Identidade e Acesso (As Chaves)
 - [x] RBAC (Role-Based Access Control): perfis `EstagiarioDev`/`EstagiarioInfra`/`Desenvolvedor`/`Infra`/`HomologViewer` implementados (ver acima).
@@ -385,7 +405,7 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - [~] Audit de DDL: toda alteração estrutural (CREATE/ALTER/DROP) já é registrada em log (`KAWASHI_DDL_AUDIT_TRG`); falta um alerta ativo — hoje é log passivo, ninguém é notificado em tempo real.
 - [~] UBA (User Behavior Analytics): regras básicas de contexto (IP, horário, ferramenta cliente) já existem e geram log; ainda não é análise comportamental de verdade (sem baseline por usuário, sem score de anomalia).
 - [ ] Honeytables (Armadilhas): Criar tabelas isca (ex: ADMIN_SALARIES) e monitorar qualquer SELECT neles.
-- [ ] SQL Watermarking: Inserir "marcas d'água" digitais nos dados exportados para rastrear a origem de possíveis vazamentos.
+- [ ] SQL Watermarking: **pesquisado**; a marca clássica (Agrawal e Kiernan) não serve para dado cifrado e textual. Caminho: registros-isca por empresa (junto com as Honeytables) e marca por exportação, quando houver exportação (ver [`infra/docs/pesquisa-protecoes-avancadas.md`](infra/docs/pesquisa-protecoes-avancadas.md)).
 - [ ] WORM Logs (Imutabilidade): Enviar logs de auditoria para um storage externo onde ninguém (nem o DBA) possa apagar.
 
 5. Camada de Resposta e Resiliência (O Escudo Ativo)
@@ -396,7 +416,7 @@ aparecem marcados como `[x]`/`[~]` aqui, sem repetir a explicação.
 - [ ] Backup Health Check: Monitorar se os backups off-site estão sendo feitos e se o PITR (Point-in-Time Recovery) está funcional.
 
 6. Camada Avançada (The Future)
-- [ ] Homomorphic Encryption: Estudar a implementação de cálculos matemáticos em campos criptografados sem abrir os dados.
+- [ ] Homomorphic Encryption: **pesquisado**; caro e sem biblioteca madura em Java. No máximo uma demonstração separada (OpenFHE), fora do caminho principal (ver [`infra/docs/pesquisa-protecoes-avancadas.md`](infra/docs/pesquisa-protecoes-avancadas.md)).
 
 ## 🩹 Technical Debts
 

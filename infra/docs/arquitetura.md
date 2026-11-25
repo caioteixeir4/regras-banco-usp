@@ -475,6 +475,55 @@ sequenceDiagram
     B->>A: agora passa
 ```
 
+## 2.10 Convite de vínculo: dar acesso a quem já tem conta em outra empresa
+
+`18_convite_de_vinculo.sql`. O administrador de uma empresa convida quem já tem conta; nada muda até a
+própria pessoa aceitar, entrando com a passkey dela.
+
+```mermaid
+sequenceDiagram
+    participant G as Administrador da empresa B
+    participant A as API
+    participant D as Banco
+    participant P as Pessoa (conta da empresa A)
+    G->>A: convidar e-mail, cargo (passkey confirmada)
+    A->>D: INSERT CONVITE_VINCULO com quem convidou e o IP
+    D->>D: gatilho: hora do banco, VINCULO_CONVIDADO no LOG_PERMISSAO e no LOG_SEGURANCA
+    A--)P: e-mail "a empresa B convidou você"
+    A-->>G: 202 "enviado para p***@dominio" (sempre igual)
+    P->>A: entra com a passkey e aceita
+    A->>D: USUARIO_EMPRESA com CONVITE_VINCULO_ID; convite ACEITO por USUARIO:<a pessoa>
+    D->>D: gatilho: só o convidado aceita; CONVITE_ACEITO nos dois logs, com o IP
+```
+
+| O que fica registrado | Onde | Pode mudar? |
+|---|---|---|
+| quem convidou, empresa, cargo, IP e hora do convite | `CONVITE_VINCULO` | não, nem pelo DBA (ORA-20114) |
+| a resposta: aceito, recusado ou cancelado, por quem, quando, de qual IP | `CONVITE_VINCULO` | uma vez só |
+| o acesso que veio do convite | `USUARIO_EMPRESA.CONVITE_VINCULO_ID` | aponta para o convite |
+| a história | `LOG_PERMISSAO` (por quem) e `LOG_SEGURANCA` (com o IP) | encadeados por hash, só recebem linhas |
+
+Para achar quem convidou alguém: `USUARIO_EMPRESA` → `CONVITE_VINCULO_ID` → `CONVIDADO_POR`, `IP_ORIGEM`
+e `CRIADO_EM`; ou o `LOG_PERMISSAO` da empresa (evento `VINCULO_CONVIDADO`), que a área do administrador
+mostra.
+
+## 2.11 VPD: a equipe de Infra não vê linha de negócio
+
+`19_vpd_infra.sql`. A política `KAWASHI_INFRA_NAO_VE` (função `SYS.KAWASHI_VPD_NEGOCIO`) está nas tabelas
+de negócio (`EMPRESA`, `FILIAL`, `PESSOA`, `CONTATO`, `ENDERECO`) de cada ambiente que as tem. Quando quem
+entrou por proxy é uma pessoa de perfil Infra ou EstagiarioInfra no cadastro de contas, o Oracle
+acrescenta `1 = 0` a toda consulta, inclusão, alteração e exclusão; para todo o resto, nada muda.
+
+- Olha a pessoa (`PROXY_USER`), e não as roles: entrando por proxy, a sessão tem as roles do schema do
+  ambiente, não as da pessoa.
+- Não passam pelo filtro: o `SYS` e quem tiver `EXEMPT ACCESS POLICY` (conceder isso é DDL e fica no
+  audit de DDL).
+- A política é posta por `SYS.KAWASHI_LIGAR_VPD`, chamada aqui e pelo `afterMigrate.sql` da API, que é
+  quem cria as tabelas.
+
+A pesquisa que levou a isso (e aos outros temas: enclaves, criptografia homomórfica, marca d'água) está
+em [`pesquisa-protecoes-avancadas.md`](pesquisa-protecoes-avancadas.md).
+
 ## 3. Como uma pessoa nova recebe acesso (onboarding via Vault)
 
 Nenhuma senha passa por chat, e-mail ou arquivo de texto em nenhum momento deste fluxo:

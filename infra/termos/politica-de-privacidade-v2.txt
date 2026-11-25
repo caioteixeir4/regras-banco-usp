@@ -1,0 +1,51 @@
+POLÍTICA DE PRIVACIDADE DO SISTEMA KAWASHI
+Versão 2
+
+Esta Política explica, como pede a Lei Geral de Proteção de Dados Pessoais (Lei 13.709/2018, LGPD), quais dados pessoais o sistema Kawashi trata, para quê, por quanto tempo, com quem compartilha, como protege e como você exerce os seus direitos.
+
+1. QUEM TRATA OS SEUS DADOS
+1.1. Controladora: { Nome da empresa }, CNPJ { CNPJ da empresa }, com sede em { Endereço da empresa } ("Kawashi"), em relação aos dados da sua conta de acesso (seção 2.1).
+1.2. Os dados que as empresas clientes cadastram sobre pessoas ligadas a elas (seção 2.2) são de responsabilidade de cada empresa, que é a controladora deles. A Kawashi os trata em nome da empresa, como operadora, só para prestar o serviço.
+1.3. Encarregado pelo tratamento de dados pessoais (art. 41 da LGPD): { Nome do encarregado de dados }, pelo e-mail { E-mail do encarregado de dados }.
+
+2. QUAIS DADOS TRATAMOS
+2.1. Da sua conta de acesso:
+- seu e-mail (gravado cifrado; usado para os convites e os avisos de segurança);
+- a parte pública das suas passkeys, o nome que você deu a cada uma e quando foram usadas (a chave secreta fica só no seu aparelho; não guardamos digital, rosto nem PIN);
+- os códigos de recuperação, guardados apenas como impressão digital (hash), nunca em texto;
+- a empresa e o cargo em que você trabalha no sistema;
+- as suas sessões (quando começaram e acabaram, de qual endereço IP);
+- os registros de uso e de segurança descritos nos Termos de Uso (endereço IP, data e hora, o que foi pedido, sem o conteúdo);
+- os aceites destes documentos (versão, data e endereço IP).
+2.2. Dos cadastros das empresas: nome e CPF ou CNPJ das pessoas (clientes, colaboradores, sócios e fornecedores), cargo ou participação societária quando houver, e-mails e telefones de contato e endereços. O CPF, o CNPJ de pessoa, o e-mail e o telefone são gravados cifrados e aparecem mascarados nas telas; ver o valor inteiro exige uma permissão própria e fica registrado.
+
+3. PARA QUE USAMOS E COM QUAL BASE LEGAL
+- Dar e controlar o seu acesso, identificar você e proteger a sua conta: execução do contrato de prestação do serviço (art. 7º, V) e legítimo interesse em manter o sistema seguro (art. 7º, IX).
+- Mandar o convite e os avisos de segurança ao seu e-mail: execução do contrato (art. 7º, V).
+- Guardar registros de acesso e de segurança: cumprimento de obrigação legal (art. 7º, II; o Marco Civil da Internet, Lei 12.965/2014, art. 15, exige guardar os registros de acesso a aplicações por 6 meses) e legítimo interesse em investigar incidentes (art. 7º, IX).
+- Guardar os cadastros das empresas: conforme as instruções e a base legal de cada empresa cliente, que é a controladora desses dados.
+Não usamos os seus dados para publicidade, não os vendemos e não tomamos decisões automatizadas que afetem você.
+
+4. COM QUEM COMPARTILHAMOS
+Os dados não são compartilhados com terceiros, exceto: com o provedor do serviço de e-mail usado para entregar os convites e os avisos; com o fornecedor da infraestrutura onde o sistema roda, se houver; e com autoridades, quando houver obrigação legal ou ordem judicial. Uma empresa cliente nunca vê os dados de outra.
+
+5. POR QUANTO TEMPO GUARDAMOS
+- Sessões: apagadas automaticamente 7 dias depois de vencerem.
+- Desafios de entrada e bloqueios por endereço IP: apagados automaticamente 1 dia depois de vencerem.
+- Conta de acesso: enquanto você tiver acesso a alguma empresa. Desligada, ela deixa de entrar na hora e é mantida pelo prazo necessário às obrigações legais e à defesa em eventuais processos (art. 16, I).
+- Registros de acesso e de segurança: pelo menos 6 meses (Marco Civil da Internet, art. 15) e enquanto necessários à segurança do sistema e à defesa em processos. Eles são encadeados para que nenhuma alteração passe despercebida, por isso não são alterados nem apagados um a um.
+- Cadastros das empresas: enquanto a empresa for cliente, conforme as instruções dela; ao fim do contrato, eliminados ou devolvidos conforme combinado com a empresa, salvo obrigação legal de guarda.
+
+6. COMO PROTEGEMOS
+Entre as medidas de segurança (art. 46 da LGPD): entrada sem senha, só por passkey; confirmação com a passkey antes de operações sensíveis; dados pessoais cifrados antes de chegar ao banco, com as chaves guardadas fora dele; disco do banco cifrado; conexão com o banco cifrada; separação completa entre as empresas; cada pessoa só vê o que o cargo dela permite; contas de banco com o mínimo de permissão; registros que não podem ser alterados; bloqueio de endereços após tentativas com falha; limites de pedidos.
+Se ocorrer um incidente de segurança que possa trazer risco ou dano relevante a você, comunicaremos você e a Autoridade Nacional de Proteção de Dados (ANPD), como pede o art. 48 da LGPD.
+
+7. SEUS DIREITOS (art. 18 da LGPD)
+Você pode pedir, a qualquer momento: a confirmação de que tratamos dados seus; o acesso aos seus dados; a correção de dados incompletos, inexatos ou desatualizados; a anonimização, o bloqueio ou a eliminação de dados desnecessários, excessivos ou tratados em desconformidade com a lei; a portabilidade dos dados; a eliminação de dados tratados com o seu consentimento, salvo as exceções do art. 16; a informação sobre com quem compartilhamos os seus dados; a informação sobre a possibilidade de não dar consentimento e as consequências disso; e a revogação do consentimento. Você também pode se opor a um tratamento feito sem consentimento, se ele descumprir a lei, e reclamar à ANPD.
+Para exercer esses direitos, escreva ao encarregado (seção 1.3). Pedidos sobre os cadastros de uma empresa cliente (seção 2.2) são encaminhados a ela, que é a controladora desses dados.
+
+8. COOKIES
+O site usa apenas um cookie de sessão, necessário para manter você conectado. Ele não é acessível por scripts, só vale neste site e não é usado para rastrear você nem para publicidade.
+
+9. MUDANÇAS NESTA POLÍTICA
+Quando esta Política mudar, a versão nova aparece no sistema antes de qualquer outra tela, e você só continua usando depois de ler e aceitar. Se a finalidade de algum tratamento mudar, você será avisado antes (art. 9º, § 2º). Cada aceite fica registrado com a versão, a data e o endereço IP.

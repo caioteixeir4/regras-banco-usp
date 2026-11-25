@@ -104,6 +104,55 @@ services:
     networks:
       - kawashi-net
 
+  # ---------------------------------------------------------
+  # A API e o BFF (os outros dois repositorios, lado a lado com este em tcc-usp/)
+  # Ficam no perfil "apps": o "docker compose up" de sempre continua subindo so a infraestrutura.
+  # Para subir tudo:
+  #   1. compile os dois (cd ..\..\tabelas-api-banco-usp; mvn -o package -DskipTests; idem no bff-banco-usp)
+  #   2. docker compose --profile apps up -d --build --no-deps api bff
+  #      O "--no-deps" e de proposito: sem ele, o compose pode recriar o Oracle (que ainda nao tem volume
+  #      de dados) e APAGAR o banco. Enquanto o Oracle nao for recriado com volume, suba so os dois.
+  # O site fica em http://localhost:9090. A API NAO e publicada na maquina: so o BFF a enxerga, pela rede
+  # interna (como em producao). Os segredos vem do .env de cada repositorio (env_file), nunca da imagem.
+  # ---------------------------------------------------------
+  api:
+    profiles: ["apps"]
+    build: ../../tabelas-api-banco-usp
+    image: kawashi-api:local
+    container_name: kawashi-api
+    env_file: ../../tabelas-api-banco-usp/.env
+    environment:
+      # Dentro da rede do Docker, cada servico e achado pelo nome do conteiner.
+      - DB_URL=jdbc:oracle:thin:@//kawashi-oracle:1521/FREEPDB1
+      - MAIL_HOST=kawashi-mailpit
+      - MAIL_PORT=1025
+      - PORT=8080
+    depends_on:
+      oracle:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - kawashi-net
+
+  bff:
+    profiles: ["apps"]
+    build: ../../bff-banco-usp
+    image: kawashi-bff:local
+    container_name: kawashi-bff
+    env_file: ../../bff-banco-usp/.env
+    environment:
+      - API_URL=http://kawashi-api:8080
+      - PORT=9090
+    ports:
+      - "127.0.0.1:9090:9090"   # o site, so na maquina local
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - kawashi-net
+
 # ---------------------------------------------------------
 # Rede Privada (Bridge)
 # Garante que os serviços se enxerguem pelo nome do container (DNS interno).
